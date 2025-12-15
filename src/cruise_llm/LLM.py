@@ -1,11 +1,11 @@
 import litellm
-from litellm import completion, responses
+from litellm import completion
 import json
 from dotenv import load_dotenv
 from typing import Optional, Union, Dict, Any
 from function_schema import get_function_schema
 import logging
-from rankings import RANKINGS
+from .rankings import RANKINGS
 
 load_dotenv()
 litellm.drop_params = True

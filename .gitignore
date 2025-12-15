@@ -13,7 +13,7 @@ dist/
 .venv/
 venv/
 env/
-
+.env
 # IDE
 .idea/
 .vscode/

@@ -40,5 +40,5 @@ Homepage = "https://github.com/PLACEHOLDER/cruise-llm"
 Repository = "https://github.com/PLACEHOLDER/cruise-llm"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cruise-llm"]
+packages = ["src/cruise_llm"]
 
