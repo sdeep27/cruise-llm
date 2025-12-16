@@ -21,6 +21,11 @@ class LLM:
         self.last_chunk_metadata = None
         # Config
         self.models = self.get_models(order_with_rankings=True)
+        if not self.models:
+            raise ValueError(
+                "Make sure you have at least one API key configured."
+                "(e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY) in your .env file."
+            )
         self.model = model or self.models[0]
         self.available_models = []
         self.temperature = temperature
@@ -339,7 +344,7 @@ class LLM:
         else:
             models = litellm.get_valid_models()
         if text_model:
-            models = [model for model in models if litellm.model_cost[model]['mode'] in ['chat', 'responses']]
+            models = [model for model in models if litellm.model_cost.get(model, {}).get('mode') in ['chat', 'responses']]
         if order_with_rankings:
             ranked = [m for m in RANKINGS if m in models]
             unranked = [m for m in models if m not in RANKINGS]

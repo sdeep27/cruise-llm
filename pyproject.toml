@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cruise-llm"
-version = "0.1.0"
-description = "PLACEHOLDER: Add project description"
+version = "0.1.1"
+description = "The fastest way to build, chain, and reuse LLM agents and flows"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
-    { name = "PLACEHOLDER", email = "PLACEHOLDER@example.com" },
+    { name = "Deep Pulusani", email = "deep.pulusani@gmail.com" },
 ]
-keywords = ["llm", "ai"]
+keywords = ["llm", "ai", "agents", "langchain", "openai", "anthropic", "litellm"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -36,8 +36,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/PLACEHOLDER/cruise-llm"
-Repository = "https://github.com/PLACEHOLDER/cruise-llm"
+Homepage = "https://github.com/sdeep27/cruise-llm"
+Repository = "https://github.com/sdeep27/cruise-llm"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cruise_llm"]
