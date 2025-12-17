@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from typing import Optional, Union, Dict, Any
 from function_schema import get_function_schema
 import logging
+import rapidfuzz
 from .rankings import RANKINGS
 
 load_dotenv()
@@ -12,21 +13,19 @@ litellm.drop_params = True
 
 class LLM:
     def __init__(self, model=None, temperature=None, stream=False, v=True, debug=False, max_tokens=24000, search=False, reasoning=False, search_context_size="medium", reasoning_effort="medium"):
-        # State
         self.chat_msgs = []
         self.logs = []
         self.response_metadatas = []
         self.followups = []
         self.available_followups = 0
         self.last_chunk_metadata = None
-        # Config
         self.models = self.get_models(order_with_rankings=True)
         if not self.models:
             raise ValueError(
                 "Make sure you have at least one API key configured."
                 "(e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY) in your .env file."
             )
-        self.model = model or self.models[0]
+        self.model = self._check_model(model)
         self.available_models = []
         self.temperature = temperature
         self.stream = stream
@@ -109,6 +108,7 @@ class LLM:
 
     def chat_json(self, **kwargs):
         self._run_prediction(jsn_mode=True, **kwargs)
+        return self
     
     cjson = c_json = ch_json = chat_json
 
@@ -134,9 +134,27 @@ class LLM:
 
     rjson = res_json = result_json
 
+    def _check_model(self,inputted_model):
+        if inputted_model is None and len(self.models):
+            return self.models[0]
+        avail_models = self.get_models()
+        if inputted_model in avail_models:
+            return inputted_model
+        else:
+            def closest_match(inputted_model, choices):
+                return rapidfuzz.process.extractOne(
+                    inputted_model,
+                    choices,
+                    scorer= rapidfuzz.fuzz.WRatio
+                )[0]
+            print(f"{inputted_model} not a valid model name.")
+            new_model = closest_match(inputted_model, avail_models)
+            print(f"Substituting {new_model}")
+            return new_model
+
     def _run_prediction(self, jsn_mode=False, **kwargs):
         args = self._resolve_args(**kwargs)
-        
+        args['model'] = self._check_model(args['model'])
         chat_args = {
             "model": args['model'],
             "temperature": args['temperature'],

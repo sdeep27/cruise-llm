@@ -8,7 +8,6 @@ build/
 dist/
 *.egg-info/
 *.egg
-
 # Virtual environments
 .venv/
 venv/
@@ -34,4 +33,5 @@ htmlcov/
 
 # Jupyter
 .ipynb_checkpoints/
+test_*.ipynb
 

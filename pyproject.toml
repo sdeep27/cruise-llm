@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cruise-llm"
-version = "0.1.1"
+version = "0.1.2"
 description = "The fastest way to build, chain, and reuse LLM agents and flows"
 readme = "README.md"
 license = "MIT"
@@ -27,6 +27,7 @@ dependencies = [
     "litellm",
     "python-dotenv",
     "function-schema",
+    "rapidfuzz",
 ]
 
 [project.optional-dependencies]
