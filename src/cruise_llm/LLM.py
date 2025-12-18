@@ -356,7 +356,7 @@ class LLM:
                 print(f'Updated model for search: {model}')
                 break
 
-    def get_models(self, text_model=True, model_str=None, order_with_rankings=False):
+    def get_models(self, model_str=None, text_model=True, order_with_rankings=False):
         if model_str:
             models = [i for i in litellm.get_valid_models() if model_str in i]
         else:
