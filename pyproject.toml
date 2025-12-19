@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cruise-llm"
-version = "0.1.2"
+version = "0.1.3"
 description = "The fastest way to build, chain, and reuse LLM agents and flows"
 readme = "README.md"
 license = "MIT"
@@ -39,6 +39,12 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/sdeep27/cruise-llm"
 Repository = "https://github.com/sdeep27/cruise-llm"
+
+[tool.hatch.build]
+include = [
+    "src/cruise_llm/**/*.py",
+    "src/cruise_llm/**/*.json",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cruise_llm"]

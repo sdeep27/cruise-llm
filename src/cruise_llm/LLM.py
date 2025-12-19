@@ -7,7 +7,6 @@ from function_schema import get_function_schema
 import logging
 import rapidfuzz
 import random
-import json
 from pathlib import Path
 
 _RANKINGS_PATH = Path(__file__).parent / "rankings" / "static_rankings_2025-12-19.json"
@@ -155,7 +154,7 @@ class LLM:
     
     def _handle_model_category(self,category_str):
         if category_str is None:
-            best_fast_intersection = [i for i in model_rankings["best"][:20] if i in model_rankings["fast"][:20]]
+            best_fast_intersection = [i for i in model_rankings["best"] if i in model_rankings["fast"][:30]]
             return best_fast_intersection[0]
         if category_str == "best":
             top_n = 15
@@ -363,14 +362,14 @@ class LLM:
         return litellm.supports_reasoning(model=model) == True
 
     def _update_model_to_reasoning(self):
-        for model in LLM.models:
+        for model in model_rankings["best"]:
             if self._has_reasoning(model):
                 self.model = model
                 print(f'Updated model for reasoning: {model}')
                 break
 
     def _update_model_to_search(self):
-        for model in LLM.models:
+        for model in model_rankings["best"]:
             if self._has_search(model):
                 self.model = model
                 print(f'Updated model for search: {model}')

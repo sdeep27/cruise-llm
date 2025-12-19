@@ -2,6 +2,7 @@ import json
 from dotenv import load_dotenv
 from cruise_llm import LLM
 import datetime
+import os
 
 load_dotenv()
 available_models = LLM().get_models()
@@ -18,7 +19,13 @@ for key, rankings in litellm_rankings.items():
             if 'codex' not in full_model_name:
                 model_rankings[key].append(full_model_name)   
 today_str = datetime.datetime.now().strftime('%Y-%m-%d')
-filename = f"test_static_rankings_{today_str}.json"
+
+filename = f"src/cruise_llm/rankings/static_rankings_{today_str}.json"
+if os.path.exists(filename):
+    response = input(f"{filename} already exists. Overwrite? (y/N): ").strip().lower()
+    if response != "y":
+        print("Aborted saving rankings.")
+        exit(0)
 with open(filename, 'w') as f:
     json.dump(model_rankings, f)
 print(f"Saved rankings to {filename}")
