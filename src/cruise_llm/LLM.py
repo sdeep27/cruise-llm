@@ -6,27 +6,31 @@ from typing import Optional, Union, Dict, Any
 from function_schema import get_function_schema
 import logging
 import rapidfuzz
-from .rankings import RANKINGS
+import random
+import json
+from pathlib import Path
+
+_RANKINGS_PATH = Path(__file__).parent / "rankings" / "static_rankings_2025-12-19.json"
+with open(_RANKINGS_PATH, "r") as f:
+    model_rankings = json.load(f)
+
 
 load_dotenv()
 litellm.drop_params = True
 
 class LLM:
-    def __init__(self, model=None, temperature=None, stream=False, v=True, debug=False, max_tokens=24000, search=False, reasoning=False, search_context_size="medium", reasoning_effort="medium"):
+    def __init__(self, model=None, temperature=None, stream=False, v=True, debug=False, max_tokens=24000, search=False, reasoning=False, search_context_size="medium", reasoning_effort="medium",sub_closest_model=True):
         self.chat_msgs = []
         self.logs = []
         self.response_metadatas = []
         self.followups = []
         self.available_followups = 0
         self.last_chunk_metadata = None
-        self.models = self.get_models(order_with_rankings=True)
-        if not self.models:
-            raise ValueError(
-                "Make sure you have at least one API key configured."
-                "(e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY) in your .env file."
-            )
+        self.available_models = self.get_models()
+        if not self.available_models:
+            raise ValueError("Make sure you have at least one API key configured. Create a .env file in your project and add a variable line: (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY)")
+        self.sub_closest_model = sub_closest_model
         self.model = self._check_model(model)
-        self.available_models = []
         self.temperature = temperature
         self.stream = stream
         self.v = v #verbosity
@@ -135,22 +139,37 @@ class LLM:
     rjson = res_json = result_json
 
     def _check_model(self,inputted_model):
-        if inputted_model is None and len(self.models):
-            return self.models[0]
+        if not self.sub_closest_model:
+            return inputted_model
         avail_models = self.get_models()
         if inputted_model in avail_models:
             return inputted_model
-        else:
-            def closest_match(inputted_model, choices):
-                return rapidfuzz.process.extractOne(
-                    inputted_model,
-                    choices,
-                    scorer= rapidfuzz.fuzz.WRatio
-                )[0]
-            print(f"{inputted_model} not a valid model name.")
-            new_model = closest_match(inputted_model, avail_models)
-            print(f"Substituting {new_model}")
-            return new_model
+        if inputted_model is None or inputted_model in ['best','cheap','fast','open','reasoning','search']:
+            return self._handle_model_category(inputted_model)
+        def closest_match(inputted_model, choices):
+            return rapidfuzz.process.extractOne(inputted_model,choices,scorer=rapidfuzz.fuzz.WRatio)[0]
+        print(f"{inputted_model} not a valid model name.")
+        new_model = closest_match(inputted_model, avail_models)
+        print(f"Substituting {new_model}")
+        return new_model
+    
+    def _handle_model_category(self,category_str):
+        if category_str is None:
+            best_fast_intersection = [i for i in model_rankings["best"][:20] if i in model_rankings["fast"][:20]]
+            return best_fast_intersection[0]
+        if category_str == "best":
+            top_n = 15
+            return random.choice(model_rankings["best"][:top_n])
+        elif category_str == "cheap":
+            top_n = 5
+            return random.choice(model_rankings["cheap"][:top_n])
+        elif category_str == "fast":
+            top_n = 10
+            return random.choice(model_rankings["fast"][:top_n])
+        elif category_str == "open":
+            top_n = 10
+            return random.choice(model_rankings["open"][:top_n])
+
 
     def _run_prediction(self, jsn_mode=False, **kwargs):
         args = self._resolve_args(**kwargs)
@@ -181,7 +200,8 @@ class LLM:
 
         if jsn_mode:
             chat_args["response_format"] = {"type": "json_object"}
-
+        if self.v:
+            print(f"Requesting {args['model']}")
         comp = completion(**chat_args)
         ## saving metadata
         self.response_metadatas.append(comp)
@@ -356,17 +376,13 @@ class LLM:
                 print(f'Updated model for search: {model}')
                 break
 
-    def get_models(self, model_str=None, text_model=True, order_with_rankings=False):
+    def get_models(self, model_str=None, text_model=True):
         if model_str:
             models = [i for i in litellm.get_valid_models() if model_str in i]
         else:
             models = litellm.get_valid_models()
         if text_model:
             models = [model for model in models if litellm.model_cost.get(model, {}).get('mode') in ['chat', 'responses']]
-        if order_with_rankings:
-            ranked = [m for m in RANKINGS if m in models]
-            unranked = [m for m in models if m not in RANKINGS]
-            models = ranked + unranked
         return models
 
     def models_with_search(self,model_str=None):
