@@ -1,12 +1,150 @@
-# 🚢 cruise-llm 
+# ⛵ cruise-llm
 
 **The fastest way to build, chain, and reuse LLM agents and flows.**
 
 ```python
 from cruise_llm import LLM
 
-# That's it. Start chatting.
-LLM().user("Explain quantum computing").chat()
+LLM().user("Explain quantum computing").chat(stream=True)
 ```
 
-More documentation coming soon. This project is in active development
+That's it. Start chatting.
+
+---
+
+## Conversations
+
+Chain naturally. State flows through.
+
+```python
+llm = LLM().sys("You are a rapper")
+llm.user("Give me 2 bars about Python").chat()
+llm.user("Now make it about Rust").chat()  # remembers context
+```
+
+Build a long conversation, then replay it with a different model:
+
+```python
+chat1 = (
+    LLM(model="fast")
+    .sys("You are a bitcoin analyst")
+    .user("What is proof of work?").chat()
+    .user("How does that compare to proof of stake?").chat()
+    .user("What are the energy implications?").chat()
+    .user("Steel man the case for bitcoin mining").chat()
+    .user("Now steel man the case against").chat()
+)
+
+# Replay entire history with a reasoning model
+chat2 = chat1.run_history(model="best", reasoning=True, reasoning_effort="high")
+
+chat1.save_llm("chats/bitcoin_analysis_fast_model.json")
+chat2.save_llm("chats/bitcoin_analysis_best_model.json")
+```
+
+## Reusable Pipelines
+
+```python
+sharpener = (
+    LLM()
+    .sys("You are an ad copywriter.")
+    .add_followup("Make it punchier.")
+)
+
+sharpener.user("Tagline for toothpaste").res()  # automatically runs "Make it punchier" on the response
+sharpener.user("Tagline for coffee").res()      # pipeline variable is reusable with no context bleed
+```
+
+## Tool Calling
+
+Pass functions directly. Handles parallel and sequential calls automatically.
+
+```python
+def get_weather(city):
+    """Get weather for a city."""
+    return f"Weather in {city}: 72°F, sunny"
+
+def get_time(timezone):
+    """Get current time in a timezone."""
+    return f"Current time in {timezone}: 3:00 PM"
+
+(
+    LLM()
+    .tools(fns=[get_weather, get_time])
+    .user("Time and weather in Tokyo?")
+    .chat()
+)
+```
+
+## Any Model
+
+Pick by name, or by what you need. No need to memorize model strings.
+
+```python
+LLM(model="best")   # top-tier reasoning
+LLM(model="fast")   # lowest latency
+LLM(model="cheap")  # budget-friendly
+LLM(model="open")   # open-source models
+
+# Discover what's available
+LLM().get_models("claude")
+```
+
+## Search & Reasoning
+
+Enable with a flag.
+
+```python
+# Web search
+LLM().tools(search=True).user("Latest news on SpaceX").chat()
+
+# Extended thinking
+(
+    LLM()
+    .tools(reasoning=True, reasoning_effort="high")
+    .user("Analyze this problem...")
+    .chat()
+)
+```
+
+## Save, Load, Export
+
+Persist your agents. Export conversations.
+
+```python
+# Save an agent config
+researcher = (
+    LLM("claude-sonnet-4")
+    .tools(search=True)
+)
+researcher.save_llm("agents/researcher.json")
+
+# Load and use later
+r = LLM.load_llm("agents/researcher.json")
+r.user("What happened in tech today?").chat()
+
+# Export conversation to markdown
+llm.to_md("conversations/session.md")
+```
+
+---
+
+## Install
+
+```bash
+pip install cruise-llm
+```
+
+**Critical step:** Create a `.env` file in your project root with at least one API key. Create a free key with any of these providers:
+
+```env
+OPENAI_API_KEY=sk-proj-...
+ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=AIza...
+GROQ_API_KEY=gsk_...
+XAI_API_KEY=xai-...
+```
+
+---
+
+*Active development. More docs coming soon. Try it for yourself!*
