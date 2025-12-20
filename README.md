@@ -8,13 +8,13 @@ from cruise_llm import LLM
 LLM().user("Explain quantum computing").chat(stream=True)
 ```
 
-That's it. Start chatting.
+That's it. Start a chat history.
 
 ---
 
-## Conversations
+## Chaining
 
-Chain naturally. State flows through.
+LLM instances that chain naturally and simply.
 
 ```python
 llm = LLM().sys("You are a rapper")
