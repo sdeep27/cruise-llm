@@ -1,4 +1,4 @@
-# ⛵ cruise-llm
+# 🏎️ cruise-llm
 
 **The fastest way to build, chain, and reuse LLM agents and flows.**
 
@@ -81,6 +81,7 @@ def get_time(timezone):
 Pick by name, or by what you need. No need to memorize model strings.
 
 ```python
+LLM(model="gpt-5-2")
 LLM(model="best")   # top-tier reasoning
 LLM(model="fast")   # lowest latency
 LLM(model="cheap")  # budget-friendly
@@ -147,4 +148,4 @@ XAI_API_KEY=xai-...
 
 ---
 
-*Active development. More docs coming soon. Try it for yourself!*
+*Enjoy it for yourself.*
