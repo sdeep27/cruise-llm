@@ -11,7 +11,7 @@ LLM().user("Explain quantum computing").chat(stream=True)
 
 ## Chaining
 
-LLM instances that chain naturally and simply.
+LLM instances that are designed to have minimal verbosity and maximum flexability:
 
 ```python
 rapper_llm = (LLM()
@@ -28,14 +28,13 @@ chat1 = (
     LLM(model="fast")
     .sys("You are a bitcoin analyst")
     .user("What is proof of work?").chat()
-    .user("How does that compare to proof of stake?").chat()
-    .user("What are the energy implications?").chat()
     .user("Steel man the case for bitcoin mining").chat()
     .user("Now steel man the case against").chat()
 )
 
 # Replay history with a new config
 chat2 = chat1.run_history(model="best", reasoning=True, reasoning_effort="high")
+
 # Save chat histories and configurations
 chat1.save_llm("chats/bitcoin_analysis_fast_model.json")
 chat2.save_llm("chats/bitcoin_analysis_best_model.json")
@@ -147,4 +146,4 @@ XAI_API_KEY=xai-...
 
 ---
 
-*Enjoy it for yourself.*
+*Enjoy cruising for yourself.*
