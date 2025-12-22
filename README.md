@@ -7,9 +7,6 @@ from cruise_llm import LLM
 
 LLM().user("Explain quantum computing").chat(stream=True)
 ```
-
-That's it. Start a chat history.
-
 ---
 
 ## Chaining
@@ -17,12 +14,14 @@ That's it. Start a chat history.
 LLM instances that chain naturally and simply.
 
 ```python
-llm = LLM().sys("You are a rapper")
-llm.user("Give me 2 bars about Python").chat()
-llm.user("Now make it about Rust").chat()  # remembers context
+rapper_llm = (LLM()
+.sys("You are a rapper")
+.user("Give me 2 bars about Python").chat()
+.user("Now make it about Rust").chat()
+)
 ```
 
-Build a long conversation, then replay it with a different model:
+Build a long conversation, then replay it with a different model in one line:
 
 ```python
 chat1 = (
@@ -35,9 +34,9 @@ chat1 = (
     .user("Now steel man the case against").chat()
 )
 
-# Replay entire history with a reasoning model
+# Replay history with a new config
 chat2 = chat1.run_history(model="best", reasoning=True, reasoning_effort="high")
-
+# Save chat histories and configurations
 chat1.save_llm("chats/bitcoin_analysis_fast_model.json")
 chat2.save_llm("chats/bitcoin_analysis_best_model.json")
 ```
@@ -57,7 +56,7 @@ sharpener.user("Tagline for coffee").res()      # pipeline variable is reusable 
 
 ## Tool Calling
 
-Pass functions directly. Handles parallel and sequential calls automatically.
+Pass functions directly without writing schema
 
 ```python
 def get_weather(city):
@@ -78,7 +77,7 @@ def get_time(timezone):
 
 ## Any Model
 
-Pick by name, or by what you need. No need to memorize model strings.
+Pick specific model, or by randomization of the best from certain categories. 
 
 ```python
 LLM(model="gpt-5-2")
@@ -136,7 +135,7 @@ llm.to_md("conversations/session.md")
 pip install cruise-llm
 ```
 
-**Critical step:** Create a `.env` file in your project root with at least one API key. Create a free key with any of these providers:
+**Critical step:** Create a `.env` file in your project root with at least one API key. Create a free key with any of these providers. Use litellm specific variable names for each model:
 
 ```env
 OPENAI_API_KEY=sk-proj-...
