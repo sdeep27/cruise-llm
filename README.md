@@ -1,6 +1,7 @@
 # 🏎️ cruise-llm
 
-**The fastest way to build, chain, and reuse LLM agents and flows.**
+**Stuck in LLM glue code? Start cruising.**  
+Build, chain, and reuse LLM agents with a clean, composable API—inspired by [scikit-learn](https://github.com/scikit-learn/scikit-learn)'s chainability and [litellm](https://github.com/BerriAI/litellm)'s model-agnostic flexibility.
 
 ```python
 from cruise_llm import LLM
