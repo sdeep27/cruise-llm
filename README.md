@@ -1,28 +1,45 @@
 # 🏎️ cruise-llm
 
-**Stuck in LLM glue code? Start cruising.**  
-Build, chain, and reuse LLM agents with a clean, composable API—inspired by [scikit-learn](https://github.com/scikit-learn/scikit-learn)'s chainability and [litellm](https://github.com/BerriAI/litellm)'s model-agnostic flexibility.
+Quickly build and reuse LLM workflows/agents with a clean, composable API — inspired by [scikit-learn](https://github.com/scikit-learn/scikit-learn)'s chainability and [litellm](https://github.com/BerriAI/litellm)'s model flexibility.
 
 ```python
 from cruise_llm import LLM
-
 LLM().user("Explain quantum computing").chat(stream=True)
 ```
+
 ---
 
-## Chaining
+## 🔧 Easy Tool Calling for Fast Agent Building
 
-LLM instances that are designed to have minimal verbosity and maximum flexability:
+Simply define functions, no schema necessary:
 
 ```python
-rapper_llm = (LLM()
-.sys("You are a rapper")
-.user("Give me 2 bars about Python").chat()
-.user("Now make it about Rust").chat()
+def search_docs(query: str):
+    """Search internal documentation."""
+    return f"Found: '{query}' appears in onboarding.md and api-reference.md"
+
+def create_ticket(title: str, priority: str):
+    """Create a support ticket."""
+    return f"Created ticket #{hash(title) % 1000}: {title} [{priority}]"
+
+def send_slack(channel: str, message: str):
+    """Send a Slack message."""
+    return f"Sent to #{channel}: {message[:50]}..."
+
+support_agent = (
+    LLM()
+    .sys("You are a support agent")
+    .tools(fns=[search_docs, create_ticket, send_slack])
 )
+
+support_agent.user("User can't log in. Check docs, create a P1 ticket, and alert #incidents").chat()
 ```
 
-Build a long conversation, then replay it with a different model in one line:
+---
+
+## ⛓️ Flexible conversations
+
+Chat instances with swappable models and minimal verbosity:
 
 ```python
 chat1 = (
@@ -33,109 +50,80 @@ chat1 = (
     .user("Now steel man the case against").chat()
 )
 
-# Replay history with a new config
+# Replay history with more intelligent yet expensive config
 chat2 = chat1.run_history(model="best", reasoning=True, reasoning_effort="high")
 
-# Save chat histories and configurations
+# Save chat histories to analyze offline or load later
 chat1.save_llm("chats/bitcoin_analysis_fast_model.json")
 chat2.save_llm("chats/bitcoin_analysis_best_model.json")
 ```
 
-## Reusable Pipelines
+---
+
+## 🤖 Reusable bots
 
 ```python
-sharpener = (
-    LLM()
-    .sys("You are an ad copywriter.")
-    .add_followup("Make it punchier.")
-)
+def style_refiner(style):
+    return LLM().sys(f"Rewrite in a {style} tone").add_followup("Make it half the length")
 
-sharpener.user("Tagline for toothpaste").res()  # automatically runs "Make it punchier" on the response
-sharpener.user("Tagline for coffee").res()      # pipeline variable is reusable with no context bleed
-```
+casual = style_refiner("casual")
+formal = style_refiner("formal")
 
-## Tool Calling
-
-Pass functions directly without writing schema
-
-```python
-def get_weather(city):
-    """Get weather for a city."""
-    return f"Weather in {city}: 72°F, sunny"
-
-def get_time(timezone):
-    """Get current time in a timezone."""
-    return f"Current time in {timezone}: 3:00 PM"
-
-(
-    LLM()
-    .tools(fns=[get_weather, get_time])
-    .user("Time and weather in Tokyo?")
-    .chat()
-)
-```
-
-## Any Model
-
-Pick specific model, or by randomization of the best from certain categories. 
-
-```python
-LLM(model="gpt-5-2")
-LLM(model="best")   # top-tier reasoning
-LLM(model="fast")   # lowest latency
-LLM(model="cheap")  # budget-friendly
-LLM(model="open")   # open-source models
-
-# Discover what's available
-LLM().get_models("claude")
-```
-
-## Search & Reasoning
-
-Enable with a flag.
-
-```python
-# Web search
-LLM().tools(search=True).user("Latest news on SpaceX").chat()
-
-# Extended thinking
-(
-    LLM()
-    .tools(reasoning=True, reasoning_effort="high")
-    .user("Analyze this problem...")
-    .chat()
-)
-```
-
-## Save, Load, Export
-
-Persist your agents. Export conversations.
-
-```python
-# Save an agent config
-researcher = (
-    LLM("claude-sonnet-4")
-    .tools(search=True)
-)
-researcher.save_llm("agents/researcher.json")
-
-# Load and use later
-r = LLM.load_llm("agents/researcher.json")
-r.user("What happened in tech today?").chat()
-
-# Export conversation to markdown
-llm.to_md("conversations/session.md")
+casual.user("We need to discuss Q3 deliverables").res()
+formal.user("hey wanna grab coffee and chat about the project?").res()
 ```
 
 ---
 
-## Install
+
+## 🔀 Model Discovery & A/B Testing
+
+Pick specific models or by category:
+
+```python
+LLM(model="gpt-5-2")
+LLM(model="best")   # top-tier reasoning
+LLM(model="fast")  
+LLM(model="cheap")  
+LLM(model="open")   # open-source models
+
+# Discover and filter what's available
+LLM().get_models("claude")
+
+# A/B test across providers
+prompt = "Write a haiku about debugging"
+for model in ["gpt-5-2", "claude-opus-4-5", "gemini-3-pro", "deepseek-v3"]:
+    LLM(model=model).user(prompt).response()
+```
+
+---
+
+
+
+## 💾 Save, Load, Export
+
+```python
+# Save an agent config
+researcher = LLM("claude-sonnet-4-5").tools(search=True)
+researcher.save_llm("agents/researcher.json")
+
+# Load
+r = LLM.load_llm("agents/researcher.json")
+r.user(f"What happened in tech {todays_date}?").chat()
+
+# Export conversation to markdown
+r.to_md(f"tech_briefing/{todays_date}.md")
+```
+
+---
+
+## 📦 Install
 
 ```bash
 pip install cruise-llm
 ```
 
-**Critical step:** Create a `.env` file in your project root with at least one API key. Create a free key with any of these providers. Use litellm specific variable names for each model:
+Your access to models is based on your API keys from the various providers—keys are available for free from most providers. Create a local `.env` file in your project root with at least one API key. Use litellm-specific variable names:
 
 ```env
 OPENAI_API_KEY=sk-proj-...
@@ -145,6 +133,3 @@ GROQ_API_KEY=gsk_...
 XAI_API_KEY=xai-...
 ```
 
----
-
-*Enjoy cruising for yourself.*
