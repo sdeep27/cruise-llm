@@ -9,6 +9,34 @@ LLM().user("Explain quantum computing").chat(stream=True)
 
 ---
 
+## ⛓️ Multi-turn Prompt Queues
+
+Build complex micro-workflows by queuing prompts that the model will execute sequentially.
+
+```python
+# Automatic multi-step processing
+news_processor = (
+    LLM(model="fast")
+    .user(f"Process this article: {raw_text}")
+    .queue("Summarize the key points into 3 bullet points for an executive.")
+    .queue("Translate those points into Spanish.")
+    .queue("Format the Spanish summary as a Slack message with emojis.")
+    .chat()
+)
+
+# Create reusable bot templates
+def style_refiner(style):
+    return LLM().sys(f"Rewrite in a {style} tone").queue("Make it half the length")
+
+casual = style_refiner("casual")
+formal = style_refiner("formal")
+
+casual.user("We need to discuss Q3 deliverables").res()
+formal.user("hey wanna grab coffee and chat about the project?").res()
+```
+
+---
+
 ## 🔧 Easy Tool Calling for Fast Agent Building
 
 Simply define functions, no schema necessary:
@@ -37,7 +65,7 @@ support_agent.user("User can't log in. Check docs, create a P1 ticket, and alert
 
 ---
 
-## ⛓️ Flexible conversations
+## 🔄 Flexible conversations
 
 Chat instances with swappable models and minimal verbosity:
 
@@ -60,22 +88,6 @@ chat2.save_llm("chats/bitcoin_analysis_best_model.json")
 
 ---
 
-## 🤖 Reusable bots
-
-```python
-def style_refiner(style):
-    return LLM().sys(f"Rewrite in a {style} tone").add_followup("Make it half the length")
-
-casual = style_refiner("casual")
-formal = style_refiner("formal")
-
-casual.user("We need to discuss Q3 deliverables").res()
-formal.user("hey wanna grab coffee and chat about the project?").res()
-```
-
----
-
-
 ## 🔀 Model Discovery & A/B Testing
 
 Pick specific models or by category:
@@ -92,7 +104,7 @@ LLM().get_models("claude")
 
 # A/B test across providers
 prompt = "Write a haiku about debugging"
-for model in ["gpt-5-2", "claude-opus-4-5", "gemini-3-pro", "deepseek-v3"]:
+for model in ["gpt-5-2", "qwen/qwen3-32b", "claude-opus-4-5", "gemini-3-pro"]:
     LLM(model=model).user(prompt).response()
 ```
 

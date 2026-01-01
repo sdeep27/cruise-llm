@@ -2,7 +2,6 @@ import litellm
 from litellm import completion
 import json
 from dotenv import load_dotenv
-from typing import Optional, Union, Dict, Any
 from function_schema import get_function_schema
 import logging
 import rapidfuzz
@@ -13,17 +12,45 @@ _RANKINGS_PATH = Path(__file__).parent / "rankings" / "static_rankings_2025-12-1
 with open(_RANKINGS_PATH, "r") as f:
     model_rankings = json.load(f)
 
-
 load_dotenv()
 litellm.drop_params = True
 
 class LLM:
+    """
+    A chainable, stateful wrapper around LiteLLM for building composable agents and workflows.
+
+    This class manages a highly flexible conversation history with interchangeable models. 
+    The API is meant for method chaining with a concise syntax, supporting quick prototyping. 
+    It supports dynamic model aliasing (e.g., "best", "fast") with fuzzy model matching, 
+    saving and loading preset workflows and prompt queues, 
+    and easy tool integration without manual schema definition.
+    """
     def __init__(self, model=None, temperature=None, stream=False, v=True, debug=False, max_tokens=None, search=False, reasoning=False, search_context_size="medium", reasoning_effort="medium",sub_closest_model=True):
+        """
+        Initialize the LLM client.
+
+        Args (tends to match OpenAI/litellm completion API spec):
+            model (str, optional): The model name (e.g., "gpt-4o", "claude-3-5-sonnet") or a category alias 
+                ("best", "fast", "cheap", "open"). Defaults to None (logic handles fallback).
+            temperature (float, optional): Sampling temperature.
+            stream (bool): If True, streams output to stdout.
+            v (bool): Verbosity flag. If True, prints prompts, tool calls, and responses to stdout.
+            debug (bool): If True, enables verbose LiteLLM logging.
+            max_tokens (int, optional): Max tokens for generation.
+            search (bool): If True, enables web search capabilities for all messages. Can instead be enabled on a per message basis, using .tools method
+            reasoning (bool): If True, enables reasoning capabilities for all messages. Can instead be enabled on a per message basis, using .tools method
+            search_context_size (str): Context size for search ("short", "medium", "long"). Defaults to "medium".
+            reasoning_effort (str): Effort level for reasoning models ("low", "medium", "high").
+            sub_closest_model (bool):  Defaults to True. Attempts to fuzzy match the model name if the exact name isn't found (e.g., "gpt4" -> "gpt-4").
+
+        Raises:
+            ValueError: If no API keys are found in the environment.
+        """
         self.chat_msgs = []
         self.logs = []
         self.response_metadatas = []
-        self.followups = []
-        self.available_followups = 0
+        self.prompt_queue = []
+        self.prompt_queue_remaining = 0
         self.last_chunk_metadata = None
         self.available_models = self.get_models()
         if not self.available_models:
@@ -42,6 +69,12 @@ class LLM:
         self.search_context_size = search_context_size
         self.reasoning_enabled = reasoning
         self.reasoning_effort = reasoning_effort
+        if self.search_enabled:
+            if not self._has_search(self.model):
+                self._update_model_to_search()
+        if self.reasoning_enabled:
+            if not self._has_reasoning(self.model):
+                self._update_model_to_reasoning()
         self.reasoning_contents = []
         self.search_annotations = []
         self.max_tokens = max_tokens
@@ -51,7 +84,7 @@ class LLM:
             self.turn_off_debug()
     
     def _resolve_args(self, **kwargs):
-        """Merges chat,run,runjson kwargs with instance defaults."""
+        """Merges chat, chat_json, res, res_json kwargs with instance init defaults."""
         instance_defaults   = {
             "model": kwargs.get("model", self.model),
             "temperature": kwargs.get("temperature", self.temperature),
@@ -65,6 +98,23 @@ class LLM:
         self.logs.append(model_call_dict)
 
     def tools(self, fns = [], search=False, search_context_size=None, reasoning=False, reasoning_effort=None):
+        """
+        Register tools (functions) or enable capabilities like Web Search or Reasoning.
+        Automatically generates JSON schemas from the provided Python functions.
+
+        Args:
+            fns (list): A list of Python callable functions. Type hints and docstrings 
+                are recommended on the functions for accurate schema generation.
+            search (bool): Enable web search. If the current model doesn't support it, 
+                attempts to switch to a supported model.
+            search_context_size (str, optional): "short", "medium", "long".
+            reasoning (bool): Enable reasoning. If current model doesn't support it,
+                attempts to switch to a supported model.
+            reasoning_effort (str, optional): "low", "medium", "high".
+
+        Returns:
+            self: For chaining.
+        """
         schemas = [get_function_schema(fn) for fn in fns]
         self.schemas = schemas
         self.fn_map = {schema['name']: fn for schema, fn in zip(schemas, fns)}
@@ -103,20 +153,48 @@ class LLM:
         return self
 
     def chat(self, **kwargs):
-        """Stateful: makes call, keeps history, returns self for chaining"""
+        """
+        Run the LLM prediction based on current history, appending the response to the internal log.
+        Generally follows a .user update, e.g. LLM().user("hi").chat()
+        This is a stateful call; it updates `self.chat_msgs`.
+
+        Args:
+            **kwargs: Overrides for run-specific settings (temperature, model, etc.).
+
+        Returns:
+            self: For chaining (e.g., `.chat().user("Next question")`).
+        """
         self._run_prediction(**kwargs)
         return self
 
     c = ch = chat
 
     def chat_json(self, **kwargs):
+        """
+        Same as `chat()`, but enforces JSON mode on the model response.
+        
+        Returns:
+            self: For chaining.
+        """
         self._run_prediction(jsn_mode=True, **kwargs)
         return self
     
     cjson = c_json = ch_json = chat_json
 
-    def result(self, **kwargs) -> str:
-        """Runs prompt, returns res string, resets chat history, keeps system prompt"""
+    def result(self, **kwargs):
+        """
+        Run the prediction, return the response text, and reset the chat history 
+        (preserving the System prompt).
+
+        Useful for single-turn tasks where you don't want history functionality 
+        cluttering the context window.
+
+        Args:
+            **kwargs: Overrides for run-specific settings.
+
+        Returns:
+            str: The assistant's response content.
+        """
         self._run_prediction(**kwargs)
         last_res = self.last()
         self._reset_msgs()
@@ -124,8 +202,14 @@ class LLM:
     
     r = res = result
 
-    def result_json(self, **kwargs) -> Dict:
-        """Runs prompt with JSON mode, returns dict, resets chat history, keeps system prompt"""
+    def result_json(self, **kwargs):
+        """
+        Run the prediction in JSON mode, parse the result, and reset chat history.
+        (preserving the System prompt).
+
+        Returns:
+            dict: The parsed JSON response. Returns empty dict on parsing error.
+        """
         self._run_prediction(jsn_mode=True, **kwargs)
         last_res = self.last()
         self._reset_msgs()
@@ -166,6 +250,17 @@ class LLM:
         return random.choice(candidates)
 
     def get_models_for_category(self, category_str):
+        """
+        Retrieve the list of models associated with a specific alias category.
+
+        Categories are defined in the static rankings file.
+
+        Args:
+            category_str (str): One of "best", "fast", "cheap", "open".
+
+        Returns:
+            list: A list of model names (strings) sorted by rank for that category.
+        """
         category_limits = {
             "best": 15,
             "cheap": 5,
@@ -174,6 +269,7 @@ class LLM:
         }
         top_n = category_limits.get(category_str, 10)
         return model_rankings.get(category_str, [])[:top_n]
+
     get_models_category = get_models_for_category
 
     def _run_prediction(self, jsn_mode=False, **kwargs):
@@ -210,7 +306,6 @@ class LLM:
         ## saving metadata
         self.response_metadatas.append(comp)
 
-
         if args['stream']:
             printed_header = False
             for chunk in comp:
@@ -230,22 +325,20 @@ class LLM:
             if args['v']:
                 actual_model = comp.model or args['model']
                 print(f"ASSISTANT ({actual_model}):")
-            
             # Tool loop
             while self._requests_tool(asst_msg):
                 self._execute_tools(asst_msg)
                 comp = completion(**chat_args)
                 self.response_metadatas.append(comp)
                 asst_msg = comp.choices[0].message
-            
             # Final text response
             self.asst(asst_msg.content, merge=False)
             if args['v']: print(f"{asst_msg.content}\n")
         
-        if self.followups and self.available_followups > 0:
-            followup_index = len(self.followups) - self.available_followups
-            self.user(self.followups[followup_index])
-            self.available_followups -= 1
+        if self.prompt_queue and self.prompt_queue_remaining > 0:
+            prompt_queue_index = len(self.prompt_queue) - self.prompt_queue_remaining
+            self.user(self.prompt_queue[prompt_queue_index])
+            self.prompt_queue_remaining -= 1
             self._run_prediction(jsn_mode, **kwargs)
 
     def _execute_tools(self, asst_msg):
@@ -273,48 +366,97 @@ class LLM:
         else:
             return False
     def _requests_tool_streaming(self):
+        "Currently tool calls are not supported for streaming responses. To be added."
         pass
     
-    def user(self, msg_str):
-        user_msg_obj = {"role": "user", "content": msg_str}
+    def user(self, prompt):
+        """
+        Add a User message to the history. 
+
+        Args:
+            prompt (str): The message content.
+
+        Returns:
+            self: For chaining.
+            Generally is followed by an inference call -> .chat, .result etc. or a preset .asst message
+        """
+        user_msg_obj = {"role": "user", "content": prompt}
         self.chat_msgs.append(user_msg_obj)
         if self.v:
             print(f"USER:")
-            print(f"{msg_str}\n")
+            print(f"{prompt}\n")
         return self
     
     u = usr = user
 
-    def asst(self, msg_str, merge=False):
+    def asst(self, prompt_response, merge=False):
+        """
+        Manually append an Assistant message to the conversation history.
+
+        This is primarily used for **Few-Shot Prompting** (In-Context Learning), 
+        where you provide examples of "User -> Assistant" pairs to teach the 
+        model how to behave before asking your real question. 
+
+        It can also be used to manually restore conversation history from a 
+        previous session.
+
+        Args:
+            prompt_response (str): The full content of the assistant's message.
+            merge (bool): If True, appends this text to the *immediately preceding* assistant message. Used internally for stitching stream chunks.
+
+        Returns:
+            self: For chaining.
+        """
         last_msg = self.chat_msgs[-1]
         if merge and last_msg["role"] == 'assistant':  
-            last_msg['content'] += msg_str
+            last_msg['content'] += prompt_response
         else:
-            self.chat_msgs.append({"role": "assistant", "content": msg_str})
+            self.chat_msgs.append({"role": "assistant", "content": prompt_response})
         return self
     
     a = asssistant = asst
 
-    def sys(self, new_str, append=True):
+    def sys(self, prompt, append=True):
+        """
+        Add or update the System message.
+
+        If a system message exists, this appends to it (unless `append=False`). 
+        If none exists, it inserts one at the start of the history.
+
+        Args:
+            prompt (str): The system instructions.
+            append (bool): If True, appends to existing system prompt. 
+                           If False, overwrites it. Defaults to True.
+
+        Returns:
+            self: For chaining. Generally followed by a .user prompt or .tools tool enabling
+        """
         if not len(self.chat_msgs):
-            self.chat_msgs.append({"role": "system", "content": new_str})
+            self.chat_msgs.append({"role": "system", "content": prompt})
         else:
             first_msg = self.chat_msgs[0]
             if first_msg['role'] == 'system':
                 if append:
-                    first_msg['content'] = first_msg['content'] + ('\n' if first_msg['content'] else '') + new_str
+                    first_msg['content'] = first_msg['content'] + ('\n' if first_msg['content'] else '') + prompt
                 else:
-                    first_msg['content'] = new_str
+                    first_msg['content'] = prompt
             else:
-                self.chat_msgs.insert(0, {"role": "system", "content": new_str}) 
+                self.chat_msgs.insert(0, {"role": "system", "content": prompt}) 
         if self.v: 
             print(f"SYSTEM MSG:")
-            print(f"{new_str}\n")
+            print(f"{prompt}\n")
         return self
 
     system = s = sys
 
     def last(self):
+        """
+        Retrieve the content of the most recent Assistant message.
+
+        Returns:
+            str: The text content of the last response, or None if no assistant 
+            message is found.
+        """
         for msg in reversed(self.chat_msgs):
             if msg['role'] == 'assistant':
                 return msg['content']
@@ -326,19 +468,49 @@ class LLM:
             self.chat_msgs = [i for i in self.chat_msgs if i['role'] == 'system']
         else:
             self.chat_msgs = []
-        self.available_followups = len(self.followups)
+        self.prompt_queue_remaining = len(self.prompt_queue)
 
+    def queue(self, prompt):
+        """
+        Queue a user message to be sent automatically after the next assistant response.
+        Useful for defining a multi-turn conversation script in advance.
 
-    def add_followup(self, prompt):
-        self.followups.append(prompt)
-        self.available_followups += 1
+        Args:
+            prompt (str): The follow-up message to send.
+
+        Returns:
+            self: For chaining.
+        """
+        self.prompt_queue.append(prompt)
+        self.prompt_queue_remaining += 1
         return self
 
+    followup = then = queue 
+
     def fwd(self, fwd_llm, instructions=''):
+        """
+        Forward the last response from this LLM to another LLM instance.
+
+        Args:
+            fwd_llm (LLM): The target LLM instance to receive the context.
+            instructions (str, optional): Additional instructions to append to the forwarded context.
+
+        Returns:
+            self: The *target* LLM instance (fwd_llm), after the chat call.
+        """
         last_res = self.last()
         return fwd_llm.user(last_res+'\n'+instructions).chat()
     
     def turn_on_debug(self):
+        """
+        Enable verbose debug logging for the underlying LiteLLM library.
+
+        This will print raw API payloads, full request/response objects, and 
+        connection details to the console. Useful for troubleshooting API key 
+        issues or unexpected model behavior.
+
+        Do not use in production as API key details can leak. 
+        """
         self._set_litellm_level(logging.DEBUG)
 
     def turn_off_debug(self):
@@ -381,6 +553,16 @@ class LLM:
                 break
 
     def get_models(self, model_str=None, text_model=True):
+        """
+        List available models, optionally filtered by name.
+
+        Args:
+            model_str (str, optional): Substring to filter models (e.g., "claude").
+            text_model (bool): Default True, filters for models that support chat/text generation.
+
+        Returns:
+            list: A list of model name strings.
+        """
         if model_str:
             models = [i for i in litellm.get_valid_models() if model_str in i]
         else:
@@ -398,6 +580,7 @@ class LLM:
         return [model for model in possible_models if litellm.supports_reasoning(model=model) == True]
     
     def to_md(self, filename):
+        """Export the chat history to a Markdown file."""
         lines = []
         for msg in self.chat_msgs:
             if not msg.get("role") or msg.get("role") not in ["user", "assistant"]:
@@ -411,13 +594,18 @@ class LLM:
             lines.append("\n---\n")
         md_output = "\n".join(lines)
         with open(filename, "w") as f:
-            f.write(md_output)
-
-    
-                
+            f.write(md_output)       
 
     def save_llm(self, filepath):
-        """Save LLM state to JSON file"""
+        """
+        Serialize the full state of the LLM (config, history, tools) to a JSON file.
+
+        Args:
+            filepath (str): Path to the output JSON file.
+
+        Returns:
+            self: For chaining.
+        """
         state = {
             "model": self.model,
             "temperature": self.temperature,
@@ -432,8 +620,8 @@ class LLM:
             "reasoning_effort": self.reasoning_effort,
             "schemas": self.schemas,
             "chat_msgs": self.chat_msgs,
-            "followups": self.followups,
-            "available_followups": self.available_followups, 
+            "prompt_queue": self.prompt_queue,
+            "prompt_queue_remaining": self.prompt_queue_remaining, 
             "reasoning_contents": self.reasoning_contents,
             "search_annotations": self.search_annotations,          
         }
@@ -443,6 +631,18 @@ class LLM:
         return self
 
     def run_history(self, **kwargs):
+        """
+        Re-run the entire conversation history of this instance using a new LLM configuration.
+
+        Useful for "upgrading" a conversation (e.g., switching from a fast model to a reasoning model)
+        or A/B testing the same context on different models.
+
+        Args:
+            **kwargs: Arguments for the new LLM instance (model, temperature, etc.).
+
+        Returns:
+            LLM: The new LLM instance after executing the history.
+        """
         new_llm = LLM(**kwargs)
         first_user_filled = False
         for chat_msg in self.chat_msgs:
@@ -452,14 +652,20 @@ class LLM:
                 if not first_user_filled:
                     new_llm.user(chat_msg['content'])
                     first_user_filled = True
-                new_llm.add_followup(chat_msg['content'])
+                new_llm.queue(chat_msg['content'])
         return new_llm.chat()
-
-        
 
     @classmethod
     def load_llm(cls, filepath):
-        """Load LLM state from JSON file, returns new instance"""
+        """
+        Reconstruct an LLM instance from a saved JSON state file. Run on the LLM class rather than an LLM instance.
+
+        Args:
+            filepath (str): Path to the source JSON file.
+
+        Returns:
+            LLM: A fully restored instance.
+        """
         with open(filepath, 'r') as f:
             state = json.load(f)
         llm = cls()
@@ -485,10 +691,10 @@ class LLM:
             llm.reasoning_effort = state["reasoning_effort"]
         if "chat_msgs" in state:
             llm.chat_msgs = state["chat_msgs"]
-        if "followups" in state:
-            llm.followups = state["followups"]
-        if "available_followups" in state:
-            llm.available_followups = state["available_followups"]
+        if "prompt_queue" in state:
+            llm.prompt_queue = state["prompt_queue"]
+        if "prompt_queue_remaining" in state:
+            llm.prompt_queue_remaining = state["prompt_queue_remaining"]
         if "schemas" in state:
             llm.schemas = state["schemas"]
         if "reasoning_contents" in state:

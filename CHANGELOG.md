@@ -9,6 +9,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-01-02
+
+### Breaking Changes
+- Renamed `.add_followup()` method to `.queue()` for clearer intent
+
+### Added
+- Comprehensive docstrings across all public methods and the `LLM` class
+- Public method `get_models_for_category(category_str)` to retrieve ranked models for a given category
+- Bigger test suite to tests/test_llm.py
+
+### Changed
+- Removed hard-coded `max_tokens` default, now respects model/provider defaults unless explicitly set
+
+### Fixed
+- Removed broken or unavailable models from the static rankings list
+
+---
+
 ## [0.1.3] - 2025-12-19
 
 ### Added
