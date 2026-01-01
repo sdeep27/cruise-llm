@@ -152,23 +152,29 @@ class LLM:
         print(f"Substituting {new_model}")
         return new_model
     
-    def _handle_model_category(self,category_str):
+    def _handle_model_category(self, category_str):
         if category_str is None:
-            best_fast_intersection = [i for i in model_rankings["best"] if i in model_rankings["fast"][:30]]
-            return best_fast_intersection[0]
-        if category_str == "best":
-            top_n = 15
-            return random.choice(model_rankings["best"][:top_n])
-        elif category_str == "cheap":
-            top_n = 5
-            return random.choice(model_rankings["cheap"][:top_n])
-        elif category_str == "fast":
-            top_n = 10
-            return random.choice(model_rankings["fast"][:top_n])
-        elif category_str == "open":
-            top_n = 10
-            return random.choice(model_rankings["open"][:top_n])
+            top_fast_models_limit = 30
+            fast_subset = set(model_rankings["fast"][:top_fast_models_limit])
+            best_fast_intersection = [m for m in model_rankings["best"] if m in fast_subset]
+            if best_fast_intersection:
+                return best_fast_intersection[0]
+            category_str = "best"
+        candidates = self.get_models_for_category(category_str)
+        if not candidates:
+            raise ValueError(f"No models available for category: {category_str}")
+        return random.choice(candidates)
 
+    def get_models_for_category(self, category_str):
+        category_limits = {
+            "best": 15,
+            "cheap": 5,
+            "fast": 10,
+            "open": 10,
+        }
+        top_n = category_limits.get(category_str, 10)
+        return model_rankings.get(category_str, [])[:top_n]
+    get_models_category = get_models_for_category
 
     def _run_prediction(self, jsn_mode=False, **kwargs):
         args = self._resolve_args(**kwargs)
