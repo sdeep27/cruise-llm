@@ -18,7 +18,7 @@ load_dotenv()
 litellm.drop_params = True
 
 class LLM:
-    def __init__(self, model=None, temperature=None, stream=False, v=True, debug=False, max_tokens=24000, search=False, reasoning=False, search_context_size="medium", reasoning_effort="medium",sub_closest_model=True):
+    def __init__(self, model=None, temperature=None, stream=False, v=True, debug=False, max_tokens=None, search=False, reasoning=False, search_context_size="medium", reasoning_effort="medium",sub_closest_model=True):
         self.chat_msgs = []
         self.logs = []
         self.response_metadatas = []
@@ -205,8 +205,7 @@ class LLM:
 
         if jsn_mode:
             chat_args["response_format"] = {"type": "json_object"}
-        if self.v:
-            print(f"Requesting {args['model']}")
+        if args['v']: print(f"Requesting {args['model']}")
         comp = completion(**chat_args)
         ## saving metadata
         self.response_metadatas.append(comp)
