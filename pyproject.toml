@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cruise-llm"
-version = "0.2.0"
+version = "0.2.1"
 description = "The fastest way to build, chain, and reuse LLM agents and flows"
 readme = "README.md"
 license = "MIT"

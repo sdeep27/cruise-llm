@@ -35,3 +35,12 @@ htmlcov/
 .ipynb_checkpoints/
 test_*.ipynb
 
+# Personal
+to_do.md
+
+# Claude Code
+CLAUDE.md
+claude/
+
+# macOS
+.DS_Store

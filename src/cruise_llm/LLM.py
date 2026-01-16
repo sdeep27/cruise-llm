@@ -290,14 +290,25 @@ class LLM:
             chat_args["parallel_tool_calls"] = self.parallel_tool_calls
         
         if self.reasoning_enabled:
-            chat_args['reasoning_effort'] = self.reasoning_effort
+            model_lower = args['model'].lower()
+            if 'grok' in model_lower and 'reasoning' in model_lower:
+                pass
+            elif model_lower.startswith('groq/'):
+                chat_args['reasoning_effort'] = 'default'
+            else:
+                chat_args['reasoning_effort'] = self.reasoning_effort
         else:
             if "gemini-3" in self.model:
                 chat_args['reasoning_effort'] = "minimal"
         if self.search_enabled:
-            chat_args["web_search_options"] = {
-                 "search_context_size": self.search_context_size
-            }
+            model_lower = args['model'].lower()
+            if model_lower.startswith('groq/'):
+                chat_args["tools"] = [{"type": "browser_search"}]
+                chat_args["tool_choice"] = "required"
+            else:
+                chat_args["web_search_options"] = {
+                    "search_context_size": self.search_context_size
+                }
 
         if jsn_mode:
             chat_args["response_format"] = {"type": "json_object"}
@@ -344,15 +355,18 @@ class LLM:
     def _execute_tools(self, asst_msg):
         """Execute all tool calls, append results to history"""
         self.chat_msgs.append(asst_msg.to_dict())
-        
+
         for tool_call in asst_msg.tool_calls:
             name = tool_call.function.name
+            if name == 'web_search':
+                if self.v: print(f'Skipping server-handled tool: {name}')
+                continue
             arguments_str = tool_call.function.arguments
             args = json.loads(arguments_str) if arguments_str and arguments_str.strip() not in ("", "null", "{}") else None
             if self.v: print(f'Found Tool {name} {args}.')
             result = self.fn_map[name](**args) if args else self.fn_map[name]()
             if self.v: print('Executed Tool. Result:', result,"\n")
-            
+
             self.chat_msgs.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
@@ -521,16 +535,32 @@ class LLM:
             logging.getLogger(name).setLevel(level)
 
     def _save_reasoning_trace(self, metadata):
-        if (hasattr(metadata, 'choices') and 
-            hasattr(metadata.choices[0], 'message') and 
-            hasattr(metadata.choices[0].message, 'reasoning_content')):
-            self.reasoning_contents.append(metadata.choices[0].message.reasoning_content)
+        try:
+            choices = getattr(metadata, 'choices', None)
+            if choices is None or callable(choices):
+                return
+            if len(choices) > 0:
+                message = getattr(choices[0], 'message', None)
+                if message:
+                    content = getattr(message, 'reasoning_content', None)
+                    if content:
+                        self.reasoning_contents.append(content)
+        except (TypeError, IndexError, AttributeError):
+            pass
 
     def _save_search_trace(self, metadata):
-        if (hasattr(metadata, 'choices') and 
-            hasattr(metadata.choices[0], 'message') and 
-            hasattr(metadata.choices[0].message, 'annotations')):            
-            self.search_annotations.append(metadata.choices[0].message.annotations)
+        try:
+            choices = getattr(metadata, 'choices', None)
+            if choices is None or callable(choices):
+                return
+            if len(choices) > 0:
+                message = getattr(choices[0], 'message', None)
+                if message:
+                    annotations = getattr(message, 'annotations', None)
+                    if annotations:
+                        self.search_annotations.append(annotations)
+        except (TypeError, IndexError, AttributeError):
+            pass
     
     def _has_search(self,model):
         return litellm.supports_web_search(model=model) == True
