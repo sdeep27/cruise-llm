@@ -10,9 +10,31 @@ import rapidfuzz
 import random
 from pathlib import Path
 
-_RANKINGS_PATH = Path(__file__).parent / "rankings" / "static_rankings_2025-12-19.json"
+_RANKINGS_PATH = Path(__file__).parent / "rankings" / "static_rankings_2026-01-21.json"
 with open(_RANKINGS_PATH, "r") as f:
-    model_rankings = json.load(f)
+    _raw_rankings = json.load(f)
+
+def _parse_rankings(raw):
+    """Convert new dict format to model list, preserving reasoning_effort metadata."""
+    parsed = {}
+    for category, items in raw.items():
+        if isinstance(items, list) and items and isinstance(items[0], dict):
+            parsed[category] = items
+        else:
+            parsed[category] = [{"model": m} for m in items]
+    return parsed
+
+model_rankings = _parse_rankings(_raw_rankings)
+
+def _get_model_name(entry):
+    """Extract model name from ranking entry (dict or string)."""
+    return entry["model"] if isinstance(entry, dict) else entry
+
+def _get_reasoning_effort(entry):
+    """Extract reasoning_effort from ranking entry if present."""
+    if isinstance(entry, dict):
+        return entry.get("reasoning_effort")
+    return None
 
 load_dotenv()
 litellm.drop_params = True
@@ -32,8 +54,9 @@ class LLM:
         Initialize the LLM client.
 
         Args (tends to match OpenAI/litellm completion API spec):
-            model (str, optional): The model name (e.g., "gpt-4o", "claude-3-5-sonnet") or a category alias 
-                ("best", "fast", "cheap", "open"). Defaults to None (logic handles fallback).
+            model (str, optional): The model name (e.g., "gpt-4o", "claude-3-5-sonnet") or a category alias
+                ("best", "fast", "cheap", "open", "optimal", "codex"). Supports deterministic selection
+                with numeric suffix (e.g., "best0", "cheap1", "optimal2"). Defaults to None which uses "optimal".
             temperature (float, optional): Sampling temperature.
             stream (bool): If True, streams output to stdout.
             v (bool): Verbosity flag. If True, prints prompts, tool calls, and responses to stdout.
@@ -51,6 +74,7 @@ class LLM:
         self.chat_msgs = []
         self.logs = []
         self.response_metadatas = []
+        self.costs = []
         self.prompt_queue = []
         self.prompt_queue_remaining = 0
         self.last_chunk_metadata = None
@@ -69,8 +93,10 @@ class LLM:
         self.fn_map = None
         self.search_enabled = search
         self.search_context_size = search_context_size
-        self.reasoning_enabled = reasoning
-        self.reasoning_effort = reasoning_effort
+        if not getattr(self, 'reasoning_enabled', None):
+            self.reasoning_enabled = reasoning
+        if not getattr(self, 'reasoning_effort', None):
+            self.reasoning_effort = reasoning_effort
         if self.search_enabled:
             if not self._has_search(self.model):
                 self._update_model_to_search()
@@ -107,6 +133,34 @@ class LLM:
         with open(image_source, "rb") as f:
             b64 = base64.b64encode(f.read()).decode("utf-8")
         return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}}
+
+    def _strip_markdown_json(self, text):
+        """Strip markdown code block wrapper from JSON if present."""
+        if not isinstance(text, str):
+            return text
+        text = text.strip()
+        if text.startswith('```'):
+            first_newline = text.find('\n')
+            if first_newline != -1 and text.endswith('```'):
+                text = text[first_newline + 1:-3].strip()
+        return text
+
+    def _track_cost(self, response, model):
+        usage = getattr(response, 'usage', None)
+        if not usage:
+            return
+        input_tokens = getattr(usage, 'prompt_tokens', 0) or 0
+        output_tokens = getattr(usage, 'completion_tokens', 0) or 0
+        try:
+            total_cost = litellm.completion_cost(completion_response=response, model=model)
+        except:
+            total_cost = 0
+        self.costs.append({
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_cost": total_cost,
+        })
 
     def tools(self, fns = [], search=False, search_context_size=None, reasoning=False, reasoning_effort=None):
         """
@@ -222,7 +276,7 @@ class LLM:
             dict: The parsed JSON response. Returns empty dict on parsing error.
         """
         self._run_prediction(jsn_mode=True, **kwargs)
-        last_res = self.last()
+        last_res = self._strip_markdown_json(self.last())
         self._reset_msgs()
         try:
             return json.loads(last_res)
@@ -232,33 +286,91 @@ class LLM:
 
     rjson = res_json = result_json
 
-    def _check_model(self,inputted_model):
+    def last_json(self):
+        """
+        Parse the last assistant response as JSON, stripping markdown fences if present.
+
+        Returns:
+            dict: The parsed JSON response. Returns empty dict on parsing error.
+        """
+        last_res = self._strip_markdown_json(self.last())
+        try:
+            return json.loads(last_res)
+        except (json.JSONDecodeError, TypeError):
+            print(f"!! Error parsing JSON: {last_res}")
+            return {}
+
+    def _check_model(self, inputted_model):
         if not self.sub_closest_model:
             return inputted_model
         avail_models = self.get_models()
         if inputted_model in avail_models:
             return inputted_model
-        if inputted_model is None or inputted_model in ['best','cheap','fast','open','reasoning','search']:
-            return self._handle_model_category(inputted_model)
+
+        category_result = self._handle_model_category(inputted_model)
+        if category_result:
+            return category_result
+
         def closest_match(inputted_model, choices):
-            return rapidfuzz.process.extractOne(inputted_model,choices,scorer=rapidfuzz.fuzz.WRatio)[0]
+            return rapidfuzz.process.extractOne(inputted_model, choices, scorer=rapidfuzz.fuzz.WRatio)[0]
         print(f"{inputted_model} not a valid model name.")
         new_model = closest_match(inputted_model, avail_models)
         print(f"Substituting {new_model}")
         return new_model
     
     def _handle_model_category(self, category_str):
+        """Handle category aliases like 'best', 'fast', 'optimal', 'codex'.
+
+        Also supports deterministic selection with numeric suffix:
+        - best0, best1, cheap2 -> select exact rank in category
+        - best, fast, optimal -> random selection from top N
+
+        Returns None if not a valid category.
+        """
+        valid_categories = ['best', 'cheap', 'fast', 'open', 'optimal', 'codex', 'reasoning', 'search']
+
+        # Default: use optimal category
         if category_str is None:
-            top_fast_models_limit = 30
-            fast_subset = set(model_rankings["fast"][:top_fast_models_limit])
-            best_fast_intersection = [m for m in model_rankings["best"] if m in fast_subset]
-            if best_fast_intersection:
-                return best_fast_intersection[0]
-            category_str = "best"
-        candidates = self.get_models_for_category(category_str)
-        if not candidates:
-            raise ValueError(f"No models available for category: {category_str}")
-        return random.choice(candidates)
+            category_str = "optimal"
+
+        # Check for deterministic selection (e.g., best0, cheap1, optimal2)
+        import re
+        match = re.match(r'^([a-z]+)(\d+)$', str(category_str).lower())
+        if match:
+            base_category = match.group(1)
+            rank_index = int(match.group(2))
+            if base_category in valid_categories:
+                entries = model_rankings.get(base_category, [])
+                if rank_index < len(entries):
+                    entry = entries[rank_index]
+                    model_name = _get_model_name(entry)
+                    # Set reasoning effort from rankings if present
+                    effort = _get_reasoning_effort(entry)
+                    if effort and not getattr(self, 'reasoning_effort', None):
+                        self.reasoning_effort = effort
+                        self.reasoning_enabled = True
+                    return model_name
+                else:
+                    raise ValueError(f"Rank {rank_index} not available for {base_category} (max: {len(entries)-1})")
+            return None
+
+        # Random selection from category
+        if category_str.lower() in valid_categories:
+            candidates = self.get_models_for_category(category_str.lower())
+            if not candidates:
+                raise ValueError(f"No models available for category: {category_str}")
+            selected = random.choice(candidates)
+            # Find the entry to get reasoning_effort
+            for entry in model_rankings.get(category_str.lower(), []):
+                if _get_model_name(entry) == selected:
+                    effort = _get_reasoning_effort(entry)
+                    if effort and not getattr(self, 'reasoning_effort', None):
+                        self.reasoning_effort = effort
+                        self.reasoning_enabled = True
+                    break
+            return selected
+
+        return None
 
     def get_models_for_category(self, category_str):
         """
@@ -267,19 +379,25 @@ class LLM:
         Categories are defined in the static rankings file.
 
         Args:
-            category_str (str): One of "best", "fast", "cheap", "open".
+            category_str (str): One of "best", "fast", "cheap", "open", "optimal", "codex".
 
         Returns:
             list: A list of model names (strings) sorted by rank for that category.
         """
+        entries = model_rankings.get(category_str, [])
+        total = len(entries)
+
         category_limits = {
-            "best": 15,
-            "cheap": 5,
-            "fast": 10,
-            "open": 10,
+            "best": min(10, total),
+            "cheap": min(10, total),
+            "fast": min(10, total),
+            "open": min(5, total),  
+            "optimal": min(10, total),
+            "codex": min(5, total), 
         }
-        top_n = category_limits.get(category_str, 10)
-        return model_rankings.get(category_str, [])[:top_n]
+        top_n = category_limits.get(category_str, min(10, total))
+
+        return [_get_model_name(entry) for entry in entries[:top_n]]
 
     get_models_category = get_models_for_category
 
@@ -305,7 +423,9 @@ class LLM:
             if 'grok' in model_lower and 'reasoning' in model_lower:
                 pass
             elif model_lower.startswith('groq/'):
-                chat_args['reasoning_effort'] = 'default'
+                pass
+            elif self.reasoning_effort == 'default':
+                pass
             else:
                 chat_args['reasoning_effort'] = self.reasoning_effort
         else:
@@ -339,6 +459,7 @@ class LLM:
                 self.asst(chunk_content, merge=True)
                 if args['v']: print(chunk_content, end="")
             self.last_chunk_metadata = chunk
+            self._track_cost(chunk, args['model'])
             if args['v']: print("\n")
         else:
             self._save_reasoning_trace(self.response_metadatas[-1])
@@ -352,9 +473,11 @@ class LLM:
                 self._execute_tools(asst_msg)
                 comp = completion(**chat_args)
                 self.response_metadatas.append(comp)
+                self._track_cost(comp, args['model'])
                 asst_msg = comp.choices[0].message
             # Final text response
             self.asst(asst_msg.content, merge=False)
+            self._track_cost(comp, args['model'])
             if args['v']: print(f"{asst_msg.content}\n")
         
         if self.prompt_queue and self.prompt_queue_remaining > 0:
@@ -401,6 +524,7 @@ class LLM:
         Args:
             prompt (str): The message content.
             image (str or list, optional): Path(s) to image file(s) or URL(s) to attach.
+                If provided, will check if current model supports vision and switch if needed.
 
         Returns:
             self: For chaining.
@@ -409,6 +533,9 @@ class LLM:
         if image is None:
             content = prompt
         else:
+            # Check if current model supports vision, switch if needed
+            if not self._has_vision(self.model):
+                self._update_model_to_vision()
             images = [image] if isinstance(image, str) else image
             content = [{"type": "text", "text": prompt}]
             for img in images:
@@ -490,7 +617,7 @@ class LLM:
         Retrieve the content of the most recent Assistant message.
 
         Returns:
-            str: The text content of the last response, or None if no assistant 
+            str: The text content of the last response, or None if no assistant
             message is found.
         """
         for msg in reversed(self.chat_msgs):
@@ -498,6 +625,24 @@ class LLM:
                 return msg['content']
 
     msg = last_msg = last
+
+    def last_cost(self, warn=True):
+        """Return the cost of the most recent completion, or None if no costs tracked."""
+        if warn and self.search_enabled:
+            print("Warning: Search is enabled. Cost may not include search-specific charges.")
+        return self.costs[-1]["total_cost"] if self.costs else None
+
+    def total_cost(self, warn=True):
+        """Return the sum of all completion costs in this session."""
+        if warn and self.search_enabled:
+            print("Warning: Search is enabled. Cost may not include search-specific charges.")
+        return sum(c["total_cost"] for c in self.costs)
+
+    def all_costs(self, warn=True):
+        """Return the full array of cost objects for all completions."""
+        if warn and self.search_enabled:
+            print("Warning: Search is enabled. Costs may not include search-specific charges.")
+        return self.costs
 
     def _reset_msgs(self, keep_sys=True):
         if keep_sys:
@@ -584,25 +729,47 @@ class LLM:
         except (TypeError, IndexError, AttributeError):
             pass
     
-    def _has_search(self,model):
+    def _has_search(self, model):
         return litellm.supports_web_search(model=model) == True
 
-    def _has_reasoning(self,model):
+    def _has_reasoning(self, model):
         return litellm.supports_reasoning(model=model) == True
 
+    def _has_vision(self, model):
+        return litellm.supports_vision(model=model) == True
+
     def _update_model_to_reasoning(self):
-        for model in model_rankings["best"]:
-            if self._has_reasoning(model):
-                self.model = model
-                print(f'Updated model for reasoning: {model}')
-                break
+        # Traverse optimal models first, then fall back to best
+        for category in ["optimal", "best"]:
+            for entry in model_rankings.get(category, []):
+                model = _get_model_name(entry)
+                if self._has_reasoning(model):
+                    self.model = model
+                    effort = _get_reasoning_effort(entry)
+                    if effort:
+                        self.reasoning_effort = effort
+                    print(f'Updated model for reasoning: {model}')
+                    return
 
     def _update_model_to_search(self):
-        for model in model_rankings["best"]:
-            if self._has_search(model):
-                self.model = model
-                print(f'Updated model for search: {model}')
-                break
+        # Traverse optimal models first, then fall back to best
+        for category in ["optimal", "best"]:
+            for entry in model_rankings.get(category, []):
+                model = _get_model_name(entry)
+                if self._has_search(model):
+                    self.model = model
+                    print(f'Updated model for search: {model}')
+                    return
+
+    def _update_model_to_vision(self):
+        # Traverse optimal models first, then fall back to best
+        for category in ["optimal", "best"]:
+            for entry in model_rankings.get(category, []):
+                model = _get_model_name(entry)
+                if self._has_vision(model):
+                    self.model = model
+                    print(f'Updated model for vision: {model}')
+                    return
 
     def get_models(self, model_str=None, text_model=True):
         """
@@ -623,13 +790,17 @@ class LLM:
             models = [model for model in models if litellm.model_cost.get(model, {}).get('mode') in ['chat', 'responses']]
         return models
 
-    def models_with_search(self,model_str=None):
+    def models_with_search(self, model_str=None):
         possible_models = self.get_models(model_str)
         return [model for model in possible_models if litellm.supports_web_search(model=model) == True]
 
     def models_with_reasoning(self, model_str=None):
         possible_models = self.get_models(model_str)
         return [model for model in possible_models if litellm.supports_reasoning(model=model) == True]
+
+    def models_with_vision(self, model_str=None):
+        possible_models = self.get_models(model_str)
+        return [model for model in possible_models if litellm.supports_vision(model=model) == True]
     
     def to_md(self, filename):
         """Export the chat history to a Markdown file."""
@@ -673,9 +844,10 @@ class LLM:
             "schemas": self.schemas,
             "chat_msgs": self.chat_msgs,
             "prompt_queue": self.prompt_queue,
-            "prompt_queue_remaining": self.prompt_queue_remaining, 
+            "prompt_queue_remaining": self.prompt_queue_remaining,
             "reasoning_contents": self.reasoning_contents,
-            "search_annotations": self.search_annotations,          
+            "search_annotations": self.search_annotations,
+            "costs": self.costs,
         }
         with open(filepath, 'w') as f:
             json.dump(state, f, indent=2)
@@ -753,6 +925,8 @@ class LLM:
             llm.reasoning_contents = state["reasoning_contents"]
         if "search_annotations" in state:
             llm.search_annotations = state["search_annotations"]
+        if "costs" in state:
+            llm.costs = state["costs"]
         print(f"Loaded instance {filepath}!")
         return llm
     

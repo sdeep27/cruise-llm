@@ -65,9 +65,9 @@ support_agent.user("User can't log in. Check docs, create a P1 ticket, and alert
 
 ---
 
-## 🖼️ Easy Image Support
+## 🖼️ Image Support
 
-Attach images to your prompts - works with local files or URLs:
+Attach images to prompts - auto-switches to a vision-capable model if needed:
 
 ```python
 # Single image
@@ -107,27 +107,46 @@ chat2.save_llm("chats/bitcoin_analysis_best_model.json")
 
 ## 🔀 Model Discovery & A/B Testing
 
-Pick specific models or by category:
+Pick specific models or get up-to-date top-10 from category:
 
 ```python
-LLM(model="gpt-5-2")
-LLM(model="best")   # top-tier reasoning
-LLM(model="fast")  
-LLM(model="cheap")  
-LLM(model="open")   # open-source models
+LLM(model="gpt-5.2")
+LLM(model="best")     # top intelligence rankings
+LLM(model="fast")     # optimized for speed
+LLM(model="cheap")    
+LLM(model="open")     # open-source models
+LLM(model="optimal")  # balanced best+fast (default)
+LLM(model="codex")    
+
+# Deterministic selection by rank
+LLM(model="best0")    # top model in best category
+LLM(model="fast2")    # 3rd fastest model
 
 # Discover and filter what's available
 LLM().get_models("claude")
-
-# A/B test across providers
-prompt = "Write a haiku about debugging"
-for model in ["gpt-5-2", "qwen/qwen3-32b", "claude-opus-4-5", "gemini-3-pro"]:
-    LLM(model=model).user(prompt).response()
+LLM().models_with_vision()
+LLM().models_with_search()
 ```
 
 ---
 
 
+
+## 💰 Cost Tracking
+
+Track token usage and costs across your session:
+
+```python
+llm = LLM(model="best")
+llm.user("Explain quantum computing").chat()
+llm.user("Summarize in one sentence").chat()
+
+print(f"Last call: ${llm.last_cost():.6f}")
+print(f"Session total: ${llm.total_cost():.6f}")
+print(f"Breakdown: {llm.all_costs()}")
+```
+
+---
 
 ## 💾 Save, Load, Export
 

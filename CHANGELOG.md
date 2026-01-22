@@ -9,12 +9,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-01-21
+
+### Added
+- **New model categories**: `optimal` (balanced best+fast) and `codex` (code-focused models)
+- **Deterministic model selection**: Use `best0`, `fast1`, `cheap2` etc. to select exact rank
+- **Auto reasoning effort**: Rankings now include `reasoning_effort` metadata, auto-applied when selecting category models
+- **Vision support**: Auto-switches to vision-capable model when images are attached
+- **`last_json()`**: Parse last response as JSON (for use after `chat_json()`)
+- **`models_with_vision()`**: List models with vision support
+
+### Changed
+- Default model selection now uses `optimal` category instead of best/fast intersection
+- `res_json()` now strips markdown code fences before parsing
+- Improved open source model detection (llama, deepseek, qwen, mistral, kimi, etc.)
+
+---
+
 ## [0.2.2] - 2026-01-21
 
 ### Added
 - **Image support**: Attach images to prompts via `.user(prompt, image="path")` or with multiple images as a list
   - Supports local files (automatically converted to base64)
   - Supports URLs (passed directly to vision-capable models)
+- **Cost tracking**: Track token usage and costs across completions
+  - `last_cost()` - cost of most recent completion
+  - `total_cost()` - sum of all completion costs in session
+  - `all_costs()` - full array of cost objects with token breakdowns
+  - Uses litellm's model_cost database (98% coverage)
+  - Warns when search is enabled (search costs vary by provider and aren't captured)
 
 ---
 
