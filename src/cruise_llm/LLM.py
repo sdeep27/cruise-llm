@@ -1,6 +1,8 @@
 import litellm
 from litellm import completion
 import json
+import base64
+import mimetypes
 from dotenv import load_dotenv
 from function_schema import get_function_schema
 import logging
@@ -96,6 +98,15 @@ class LLM:
 
     def _logger_fn(self, model_call_dict):
         self.logs.append(model_call_dict)
+
+    def _process_image(self, image_source):
+        if image_source.startswith(('http://', 'https://')):
+            return {"type": "image_url", "image_url": {"url": image_source}}
+        mime_type, _ = mimetypes.guess_type(image_source)
+        mime_type = mime_type or "image/png"
+        with open(image_source, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+        return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}}
 
     def tools(self, fns = [], search=False, search_context_size=None, reasoning=False, reasoning_effort=None):
         """
@@ -383,22 +394,33 @@ class LLM:
         "Currently tool calls are not supported for streaming responses. To be added."
         pass
     
-    def user(self, prompt):
+    def user(self, prompt, image=None):
         """
-        Add a User message to the history. 
+        Add a User message to the history.
 
         Args:
             prompt (str): The message content.
+            image (str or list, optional): Path(s) to image file(s) or URL(s) to attach.
 
         Returns:
             self: For chaining.
             Generally is followed by an inference call -> .chat, .result etc. or a preset .asst message
         """
-        user_msg_obj = {"role": "user", "content": prompt}
+        if image is None:
+            content = prompt
+        else:
+            images = [image] if isinstance(image, str) else image
+            content = [{"type": "text", "text": prompt}]
+            for img in images:
+                content.append(self._process_image(img))
+        user_msg_obj = {"role": "user", "content": content}
         self.chat_msgs.append(user_msg_obj)
         if self.v:
             print(f"USER:")
             print(f"{prompt}\n")
+            if image:
+                img_count = 1 if isinstance(image, str) else len(image)
+                print(f"[{img_count} image(s) attached]\n")
         return self
     
     u = usr = user

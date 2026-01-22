@@ -65,6 +65,23 @@ support_agent.user("User can't log in. Check docs, create a P1 ticket, and alert
 
 ---
 
+## 🖼️ Easy Image Support
+
+Attach images to your prompts - works with local files or URLs:
+
+```python
+# Single image
+LLM().user("What's in this image?", image="photo.jpg").chat()
+
+# Multiple images
+LLM().user("Compare these", image=["before.png", "after.png"]).chat()
+
+# URL
+LLM().user("Describe this", image="https://example.com/image.jpg").chat()
+```
+
+---
+
 ## 🔄 Flexible conversations
 
 Chat instances with swappable models and minimal verbosity:

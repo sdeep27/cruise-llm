@@ -9,7 +9,8 @@ import tempfile
 import pytest
 
 # Add src to path for local development
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(TEST_DIR, '../src'))
 
 from cruise_llm import LLM
 
@@ -36,6 +37,7 @@ class TestModelDiscovery:
         all_models = llm.get_models()
         assert isinstance(all_models, list), "get_models() should return a list"
         assert len(all_models) > 0, "Should have at least one model available"
+        print(f"   Found {len(all_models)} models")
 
     def test_get_models_with_filter(self):
         """Test get_models() with model_str filter."""
@@ -89,6 +91,7 @@ class TestConversationalMode:
         last_response = llm.last()
         assert last_response is not None, "last() should return a response"
         assert isinstance(last_response, str), "last() should return a string"
+        print(f"   Response: {last_response[:60]}...")
 
 
 class TestPipelineMode:
@@ -103,6 +106,7 @@ class TestPipelineMode:
         assert isinstance(result1, str), "res() should return a string"
         assert len(pipeline.chat_msgs) == 1, f"History should only have system msg, got {len(pipeline.chat_msgs)}"
         assert pipeline.chat_msgs[0]['role'] == 'system', "Should keep system prompt"
+        print(f"   Pipeline result: {result1[:60]}...")
 
     def test_res_no_history_bleed(self):
         """Test second res() has no history from first."""
@@ -129,6 +133,7 @@ class TestJsonOutput:
         assert isinstance(result, dict), f"res_json() should return dict, got {type(result)}"
         assert 'entities' in result, f"Result should have 'entities' key, got: {result}"
         assert isinstance(result['entities'], list), "'entities' should be a list"
+        print(f"   Extracted entities: {result['entities']}")
 
 
 class TestMultiFollowupChains:
@@ -212,6 +217,7 @@ class TestParallelToolCalling:
 
         response = llm.last()
         assert response is not None, "Should have a response"
+        print(f"   Tool response: {response[:80]}...")
 
 
 class TestSequentialToolCalling:
@@ -254,6 +260,7 @@ class TestStreamingMode:
         response = llm.last()
         assert response is not None, "Streaming should produce a response"
         assert len(response) > 0, "Response should not be empty"
+        print(f"   Streaming response: {response[:60]}...")
 
     def test_streaming_captures_metadata(self):
         """Test streaming captures chunk metadata."""
@@ -438,3 +445,40 @@ class TestForward:
 
         assert isinstance(result, LLM), "fwd() should return the target LLM"
         assert len(llm2.chat_msgs) > 1, "Target LLM should have messages"
+        print(f"   Forwarded: {llm1.last()[:30]}... -> {llm2.last()[:50]}...")
+
+
+class TestImageSupport:
+    """Test image attachment in user() method."""
+
+    def test_single_image_local(self):
+        """Test single local image attachment."""
+        llm = LLM(v=False, max_tokens=50)
+        img_path = os.path.join(TEST_DIR, 'test_images/bunny.jpg')
+        llm.user('What animal is in this image? Reply in one word only.', image=img_path).chat()
+        response = llm.last().strip().lower()
+        assert 'rabbit' in response or 'bunny' in response, f"Should identify rabbit, got: {response}"
+        print(f"   Single image identified: {response}")
+
+    def test_multiple_images(self):
+        """Test multiple image attachments."""
+        llm = LLM(v=False, max_tokens=150)
+        img1 = os.path.join(TEST_DIR, 'test_images/bunny.jpg')
+        img2 = os.path.join(TEST_DIR, 'test_images/open_source.png')
+        llm.user('List what you see in each image. Be brief.', image=[img1, img2]).chat()
+        response = llm.last().lower()
+        assert 'rabbit' in response or 'bunny' in response, "Should mention rabbit"
+        assert 'open source' in response or 'logo' in response or 'code' in response, "Should mention logo/open source"
+        print(f"   Multiple images described: {response[:80]}...")
+
+    def test_url_image(self):
+        """Test URL image attachment."""
+        llm = LLM(v=False, max_tokens=50)
+        llm.user('What is the dominant color? One word.', image='https://picsum.photos/id/1015/200/200').chat()
+        response = llm.last().strip().lower()
+        assert 'blue' in response, f"Should identify blue, got: {response}"
+        print(f"   URL image color identified: {response}")
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "-s"])
