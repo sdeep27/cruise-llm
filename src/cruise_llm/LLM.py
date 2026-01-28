@@ -140,10 +140,22 @@ class LLM:
             return text
         text = text.strip()
         if text.startswith('```'):
-            first_newline = text.find('\n')
-            if first_newline != -1 and text.endswith('```'):
-                text = text[first_newline + 1:-3].strip()
+            lines = text.split('\n')
+            # Remove first line (```json or ```)
+            if lines[-1].strip() == '```':
+                lines = lines[1:-1]
+            else:
+                lines = lines[1:]
+            text = '\n'.join(lines).strip()
         return text
+
+    def _enforce_json(self, text):
+        """Use LLM to fix malformed JSON. Returns parsed dict or {} on failure."""
+        enforcer = LLM(model="fast", stream=False, v=False) \
+            .sys('You are a JSON enforcer. The user will provide text that should be valid JSON but may have issues. Return ONLY valid JSON that can be parsed by json.loads. Fix any syntax errors, missing brackets, or malformed structures. Output nothing except the corrected JSON.') \
+            .user('{text}')
+        result = enforcer.run_json(text=text, enforce=False)  # enforce=False to avoid recursion
+        return result
 
     def _track_cost(self, response, model):
         usage = getattr(response, 'usage', None)
@@ -267,10 +279,14 @@ class LLM:
     
     r = res = result
 
-    def result_json(self, **kwargs):
+    def result_json(self, enforce=True, **kwargs):
         """
         Run the prediction in JSON mode, parse the result, and reset chat history.
         (preserving the System prompt).
+
+        Args:
+            enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
+            **kwargs: Overrides for run-specific settings.
 
         Returns:
             dict: The parsed JSON response. Returns empty dict on parsing error.
@@ -281,14 +297,136 @@ class LLM:
         try:
             return json.loads(last_res)
         except (json.JSONDecodeError, TypeError):
+            if enforce:
+                return self._enforce_json(last_res)
             print(f"!! Error parsing JSON: {last_res}")
             return {}
 
     rjson = res_json = result_json
 
-    def last_json(self):
+    def _interpolate_templates(self, **kwargs):
+        """
+        Interpolate {placeholder} template variables in all chat messages.
+        
+        Args:
+            **kwargs: Template variables to interpolate (e.g., ticker="TSLA")
+        
+        Returns:
+            self: For chaining.
+        """
+        import re
+        for msg in self.chat_msgs:
+            content = msg.get('content', '')
+            if isinstance(content, str):
+                msg['content'] = content.format(**kwargs)
+            elif isinstance(content, list):  # Handle vision messages with content arrays
+                for item in content:
+                    if isinstance(item, dict) and item.get('type') == 'text':
+                        item['text'] = item['text'].format(**kwargs)
+        # Also interpolate queued prompts
+        self.prompt_queue = [p.format(**kwargs) for p in self.prompt_queue]
+        return self
+
+    def get_template_vars(self):
+        """
+        Return set of placeholder variable names found in all prompts.
+        
+        Useful for introspecting a loaded LLM to see what inputs it expects.
+        
+        Returns:
+            set: Variable names (e.g., {'ticker', 'timeframe'})
+        """
+        import re
+        pattern = re.compile(r'\{(\w+)\}')
+        vars_found = set()
+        for msg in self.chat_msgs:
+            content = msg.get('content', '')
+            if isinstance(content, str):
+                vars_found.update(pattern.findall(content))
+            elif isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get('type') == 'text':
+                        vars_found.update(pattern.findall(item.get('text', '')))
+        # Check prompt queue too
+        for prompt in self.prompt_queue:
+            vars_found.update(pattern.findall(prompt))
+        return vars_found
+
+    def run(self, **kwargs):
+        """
+        Execute the LLM with template variable interpolation.
+        
+        Interpolates {key} placeholders in all chat_msgs with provided kwargs,
+        runs the prediction, and returns the response directly.
+        
+        This enables "LLM as function" usage:
+            dcf = LLM().sys("Analyze {ticker}").user("Provide DCF valuation")
+            result = dcf.run(ticker="TSLA")
+        
+        Args:
+            **kwargs: Template variables to interpolate (e.g., ticker="TSLA").
+                      Any unknown kwargs are passed to the prediction (model, temperature, etc.)
+        
+        Returns:
+            str: The assistant's response content.
+        """
+        # Separate template vars from prediction kwargs
+        template_vars = self.get_template_vars()
+        interp_kwargs = {k: v for k, v in kwargs.items() if k in template_vars}
+        pred_kwargs = {k: v for k, v in kwargs.items() if k not in template_vars}
+        
+        # Validate all template vars are provided
+        missing = template_vars - set(interp_kwargs.keys())
+        if missing:
+            raise ValueError(f"Missing template variables: {missing}")
+        
+        self._interpolate_templates(**interp_kwargs)
+        self._run_prediction(**pred_kwargs)
+        last_res = self.last()
+        self._reset_msgs()
+        return last_res
+
+    def run_json(self, enforce=True, **kwargs):
+        """
+        Execute the LLM with template interpolation, returning parsed JSON.
+        
+        Same as run() but enforces JSON mode and parses the response.
+        
+        Args:
+            enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
+            **kwargs: Template variables and/or prediction kwargs.
+        
+        Returns:
+            dict: The parsed JSON response. Returns empty dict on parsing error.
+        """
+        # Separate template vars from prediction kwargs
+        template_vars = self.get_template_vars()
+        interp_kwargs = {k: v for k, v in kwargs.items() if k in template_vars}
+        pred_kwargs = {k: v for k, v in kwargs.items() if k not in template_vars}
+        
+        # Validate all template vars are provided
+        missing = template_vars - set(interp_kwargs.keys())
+        if missing:
+            raise ValueError(f"Missing template variables: {missing}")
+        
+        self._interpolate_templates(**interp_kwargs)
+        self._run_prediction(jsn_mode=True, **pred_kwargs)
+        last_res = self._strip_markdown_json(self.last())
+        self._reset_msgs()
+        try:
+            return json.loads(last_res)
+        except (json.JSONDecodeError, TypeError):
+            if enforce:
+                return self._enforce_json(last_res)
+            print(f"!! Error parsing JSON: {last_res}")
+            return {}
+
+    def last_json(self, enforce=True):
         """
         Parse the last assistant response as JSON, stripping markdown fences if present.
+
+        Args:
+            enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
 
         Returns:
             dict: The parsed JSON response. Returns empty dict on parsing error.
@@ -297,6 +435,8 @@ class LLM:
         try:
             return json.loads(last_res)
         except (json.JSONDecodeError, TypeError):
+            if enforce:
+                return self._enforce_json(last_res)
             print(f"!! Error parsing JSON: {last_res}")
             return {}
 

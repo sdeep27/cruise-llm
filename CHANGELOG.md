@@ -9,6 +9,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-01-27
+
+### Added
+- **LLM as function pattern**: New `run()` and `run_json()` methods with template interpolation
+  - Define prompts with `{placeholders}`, then call `llm.run(var="value")`
+  - `get_template_vars()` returns all placeholder names in the LLM
+- **JSON enforcement**: Auto-fix malformed JSON using a fast LLM
+  - `result_json()`, `run_json()`, and `last_json()` now have `enforce=True` by default
+  - Falls back to LLM-based repair when `json.loads()` fails
+
+### Changed
+- Improved `_strip_markdown_json()` to handle edge cases with markdown code fences
+
+---
+
 ## [0.3.0] - 2026-01-21
 
 ### Added
