@@ -1,5 +1,5 @@
 import litellm
-from litellm import completion
+from litellm import completion, responses
 import json
 import base64
 import mimetypes
@@ -372,21 +372,37 @@ class LLM:
 
         return None
 
-    def get_models_for_category(self, category_str):
+    def get_models_for_category(self, category_str, search=False, reasoning=False, vision=False):
         """
         Retrieve the list of models associated with a specific alias category.
+        Optionally filter by capability (search, reasoning, vision).
 
         Categories are defined in the static rankings file.
 
         Args:
             category_str (str): One of "best", "fast", "cheap", "open", "optimal", "codex".
+            search (bool): If True, only return models that support web search.
+            reasoning (bool): If True, only return models that support reasoning.
+            vision (bool): If True, only return models that support vision.
 
         Returns:
             list: A list of model names (strings) sorted by rank for that category.
         """
         entries = model_rankings.get(category_str, [])
+        
+        # If filtering by capability, get all models first, filter, then apply limit
+        if search or reasoning or vision:
+            models = [_get_model_name(entry) for entry in entries]
+            if search:
+                models = [m for m in models if self._has_search(m)]
+            if reasoning:
+                models = [m for m in models if self._has_reasoning(m)]
+            if vision:
+                models = [m for m in models if self._has_vision(m)]
+            return models[:10]
+        
+        # Default behavior: apply category-specific limits
         total = len(entries)
-
         category_limits = {
             "best": min(10, total),
             "cheap": min(10, total),
@@ -401,9 +417,84 @@ class LLM:
 
     get_models_category = get_models_for_category
 
+    def _run_xai_search(self, args, jsn_mode=False):
+        """Handle xAI search using the Responses API (Agent Tools API).
+        xAI deprecated Live Search Dec 2025 - web_search tool only works via Responses API.
+        """
+        # Convert chat messages to Responses API input format
+        input_messages = []
+        for msg in self.chat_msgs:
+            role = msg.get('role')
+            content = msg.get('content', '')
+            if role == 'system':
+                input_messages.append({"role": "developer", "content": content})
+            elif role in ('user', 'assistant'):
+                input_messages.append({"role": role, "content": content})
+
+        resp_args = {
+            "model": args['model'],
+            "input": input_messages,
+            "tools": [{"type": "web_search"}],
+        }
+        if args['temperature'] is not None:
+            resp_args["temperature"] = args['temperature']
+        if args['max_tokens'] is not None:
+            resp_args["max_output_tokens"] = args['max_tokens']
+
+        if args['v']:
+            print(f"Requesting {args['model']} (Responses API with web_search)")
+
+        resp = responses(**resp_args)
+        self.response_metadatas.append(resp)
+
+        # Extract text from the Responses API output
+        output_text = ""
+        for output_item in resp.output:
+            if hasattr(output_item, 'content'):
+                for content_item in output_item.content:
+                    if hasattr(content_item, 'text'):
+                        output_text += content_item.text
+
+        self.asst(output_text, merge=False)
+        self._track_cost_responses(resp, args['model'])
+        if args['v']:
+            actual_model = resp.model or args['model']
+            print(f"ASSISTANT ({actual_model}):")
+            print(f"{output_text}\n")
+
+        # Handle prompt queue
+        if self.prompt_queue and self.prompt_queue_remaining > 0:
+            prompt_queue_index = len(self.prompt_queue) - self.prompt_queue_remaining
+            self.user(self.prompt_queue[prompt_queue_index])
+            self.prompt_queue_remaining -= 1
+            self._run_xai_search(args, jsn_mode)
+
+    def _track_cost_responses(self, resp, model):
+        """Track costs from Responses API format."""
+        usage = getattr(resp, 'usage', None)
+        if not usage:
+            return
+        input_tokens = getattr(usage, 'input_tokens', 0) or 0
+        output_tokens = getattr(usage, 'output_tokens', 0) or 0
+        total_cost = getattr(usage, 'cost_in_usd_ticks', 0)
+        if total_cost:
+            total_cost = total_cost / 1e9  # Convert from ticks to USD
+        self.costs.append({
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_cost": total_cost,
+        })
+
     def _run_prediction(self, jsn_mode=False, **kwargs):
         args = self._resolve_args(**kwargs)
         args['model'] = self._check_model(args['model'])
+        model_lower = args['model'].lower()
+
+        # xAI with search requires Responses API (Agent Tools API)
+        if self.search_enabled and model_lower.startswith('xai/'):
+            return self._run_xai_search(args, jsn_mode)
+
         chat_args = {
             "model": args['model'],
             "temperature": args['temperature'],
@@ -417,9 +508,8 @@ class LLM:
             chat_args["tools"] = self.available_tools
             chat_args["tool_choice"] = self.tool_choice
             chat_args["parallel_tool_calls"] = self.parallel_tool_calls
-        
+
         if self.reasoning_enabled:
-            model_lower = args['model'].lower()
             if 'grok' in model_lower and 'reasoning' in model_lower:
                 pass
             elif model_lower.startswith('groq/'):
@@ -432,7 +522,6 @@ class LLM:
             if "gemini-3" in self.model:
                 chat_args['reasoning_effort'] = "minimal"
         if self.search_enabled:
-            model_lower = args['model'].lower()
             if model_lower.startswith('groq/'):
                 chat_args["tools"] = [{"type": "browser_search"}]
                 chat_args["tool_choice"] = "required"
