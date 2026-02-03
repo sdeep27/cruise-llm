@@ -952,6 +952,56 @@ class LLM:
             print("Warning: Search is enabled. Costs may not include search-specific charges.")
         return self.costs
 
+    def evaluate_last(self, include_prompt=False, additional_information='', metrics=None, penalize_verbosity=False, v=True):
+        """
+        Evaluate the last assistant response using absolute scoring.
+
+        Useful for comparing scores across different LLM instances with the same prompt.
+
+        Args:
+            include_prompt: If True, include the user prompt in evaluation context.
+            additional_information: Domain context for the evaluator.
+            metrics: Dict of {"evaluation question": "scale"}. Empty = auto-generate 3 metrics.
+            penalize_verbosity: If True, add "reward conciseness" to evaluation.
+            v: Verbose output.
+
+        Returns:
+            dict with:
+                - score: normalized 0-1 average across metrics
+                - metric_scores: raw scores per metric
+                - scales: the scale used for each metric
+
+        Example:
+            llm = LLM(model="fast").user("Explain AI").chat()
+            score = llm.evaluate_last(metrics={"How clear?": "1-10"})
+            print(score["score"])  # 0.82
+        """
+        from .evaluate import evaluate_single
+
+        response = self.last()
+        if response is None:
+            raise ValueError("No assistant response found - call .chat() first before evaluate_last()")
+
+        prompt = None
+        if include_prompt:
+            for msg in reversed(self.chat_msgs):
+                if msg['role'] == 'user':
+                    content = msg.get('content', '')
+                    if isinstance(content, str):
+                        prompt = content
+                    elif isinstance(content, list):
+                        prompt = ' '.join(item.get('text', '') for item in content if item.get('type') == 'text')
+                    break
+
+        return evaluate_single(
+            response=response,
+            prompt=prompt,
+            additional_information=additional_information,
+            metrics=metrics,
+            penalize_verbosity=penalize_verbosity,
+            v=v
+        )
+
     def _reset_msgs(self, keep_sys=True):
         if keep_sys:
             self.chat_msgs = [i for i in self.chat_msgs if i['role'] == 'system']

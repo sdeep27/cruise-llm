@@ -1,6 +1,6 @@
 # Changelog
 
-**cruise-llm** is a lightweight Python library for working with LLMs. A simple, chainable interface for building AI workflows—without the complexity of heavier frameworks. One class, one import, all providers.
+**cruise-llm** is a lightweight Python library for working with LLMs. A simple, chainable interface for building AI workflows.
 
 ---
 
