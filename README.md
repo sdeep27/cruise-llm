@@ -113,14 +113,19 @@ Pick specific models or get up-to-date top-10 from category:
 LLM(model="gpt-5.2")
 LLM(model="best")     # top intelligence rankings
 LLM(model="fast")     # optimized for speed
-LLM(model="cheap")    
+LLM(model="cheap")
 LLM(model="open")     # open-source models
 LLM(model="optimal")  # balanced best+fast (default)
-LLM(model="codex")    
+LLM(model="codex")
 
-# Deterministic selection by rank
-LLM(model="best0")    # top model in best category
-LLM(model="fast2")    # 3rd fastest model
+# Simple numeric selection (zips optimal and best)
+LLM(model=1)          # top optimal (default)
+LLM(model=2)          # top best
+LLM(model=3)          # second optimal
+
+# Deterministic selection by rank (1-indexed)
+LLM(model="best1")    # top model in best category
+LLM(model="fast3")    # 3rd fastest model
 
 # Discover and filter what's available
 LLM().get_models("claude")
@@ -130,7 +135,48 @@ LLM().models_with_search()
 
 ---
 
+## 🧬 Generate LLMs from Descriptions
 
+Create configured LLM instances from natural language:
+
+```python
+# Generate a specialized LLM
+summarizer = LLM().generate("Text summarizer that outputs 3 bullet points")
+result = summarizer.run(text="Long article here...")
+
+# Use a powerful model as the generator for better results
+analyst = LLM(model="best", reasoning=True).generate(
+    "A senior financial analyst for DCF valuations"
+)
+result = analyst.run(ticker="NVDA")
+
+# Generated LLMs can be saved and reused
+analyst.save_llm("agents/dcf_analyst.json")
+```
+
+---
+
+## ⚡ LLM as Function
+
+Use LLMs as reusable functions with template variables:
+
+```python
+# Define with {placeholders}, call with .run()
+sentiment = LLM().sys("Classify sentiment").user("Text: {text}")
+sentiment.run("I love this product!")  # positional arg when 1 required var
+sentiment.run(text="This is terrible")  # or use kwargs
+
+# Optional variables with {var?} syntax
+analyzer = LLM().user("Analyze {ticker} focusing on {aspect?}")
+analyzer.run(ticker="TSLA")                        # aspect becomes ""
+analyzer.run(ticker="TSLA", aspect="growth")       # aspect = "growth"
+
+# JSON output
+extractor = LLM().sys("Extract entities as JSON").user("{text}")
+entities = extractor.run_json("Apple announced new MacBooks")
+```
+
+---
 
 ## 💰 Cost Tracking
 

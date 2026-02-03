@@ -9,6 +9,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-02-02
+
+### Added
+- **`generate()` method**: Create configured LLM instances from natural language descriptions
+  - `LLM().generate("A DCF analyst that takes a stock ticker")` returns a ready-to-use LLM
+  - Uses tool-calling internally to configure system prompt, inputs, reasoning, search, etc.
+  - Generator LLM configuration (model, reasoning) influences quality of generated instance
+- **Optional template variables**: `{var?}` syntax for optional inputs that default to empty string
+  - `llm.user("Analyze {ticker} {context?}")` - context becomes "" if not provided
+  - `get_template_vars(split=True)` returns `{'required': set(), 'optional': set()}`
+- **Positional argument for `run()`**: When exactly one required variable, pass it directly
+  - `dcf.run("TSLA")` instead of `dcf.run(ticker="TSLA")`
+- **Simple numeric model selection**: Numbers 1-N zip optimal and best rankings
+  - `LLM(model=1)` = top optimal, `LLM(model=2)` = top best, `LLM(model=3)` = second optimal, etc.
+
+### Changed
+- Model rank suffixes are now 1-indexed: `best1` (not `best0`) selects the top model
+- Default model selection changed from `optimal` to `optimal1` (deterministic top optimal)
+
+---
+
 ## [0.4.0] - 2026-01-27
 
 ### Added

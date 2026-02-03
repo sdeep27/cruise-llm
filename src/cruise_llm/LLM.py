@@ -56,7 +56,9 @@ class LLM:
         Args (tends to match OpenAI/litellm completion API spec):
             model (str, optional): The model name (e.g., "gpt-4o", "claude-3-5-sonnet") or a category alias
                 ("best", "fast", "cheap", "open", "optimal", "codex"). Supports deterministic selection
-                with numeric suffix (e.g., "best0", "cheap1", "optimal2"). Defaults to None which uses "optimal".
+                with 1-indexed suffix (e.g., "best1", "optimal2") or simple numbers (1, 2, 3...) which
+                zip optimal and best rankings (1=top optimal, 2=top best, 3=second optimal, etc.).
+                Defaults to "optimal1" (top optimal model).
             temperature (float, optional): Sampling temperature.
             stream (bool): If True, streams output to stdout.
             v (bool): Verbosity flag. If True, prints prompts, tool calls, and responses to stdout.
@@ -307,108 +309,157 @@ class LLM:
     def _interpolate_templates(self, **kwargs):
         """
         Interpolate {placeholder} template variables in all chat messages.
-        
+        Handles both required {var} and optional {var?} syntax.
+
         Args:
             **kwargs: Template variables to interpolate (e.g., ticker="TSLA")
-        
+
         Returns:
             self: For chaining.
         """
         import re
-        for msg in self.chat_msgs:
-            content = msg.get('content', '')
-            if isinstance(content, str):
-                msg['content'] = content.format(**kwargs)
-            elif isinstance(content, list):  # Handle vision messages with content arrays
-                for item in content:
-                    if isinstance(item, dict) and item.get('type') == 'text':
-                        item['text'] = item['text'].format(**kwargs)
-        # Also interpolate queued prompts
-        self.prompt_queue = [p.format(**kwargs) for p in self.prompt_queue]
-        return self
 
-    def get_template_vars(self):
-        """
-        Return set of placeholder variable names found in all prompts.
-        
-        Useful for introspecting a loaded LLM to see what inputs it expects.
-        
-        Returns:
-            set: Variable names (e.g., {'ticker', 'timeframe'})
-        """
-        import re
-        pattern = re.compile(r'\{(\w+)\}')
-        vars_found = set()
+        def interpolate_text(text):
+            # First, handle optional vars {var?} - replace with value or empty string
+            def replace_optional(match):
+                var_name = match.group(1)
+                return str(kwargs.get(var_name, ''))
+            text = re.sub(r'\{(\w+)\?\}', replace_optional, text)
+            # Then handle required vars with standard format
+            return text.format(**kwargs)
+
         for msg in self.chat_msgs:
             content = msg.get('content', '')
             if isinstance(content, str):
-                vars_found.update(pattern.findall(content))
+                msg['content'] = interpolate_text(content)
             elif isinstance(content, list):
                 for item in content:
                     if isinstance(item, dict) and item.get('type') == 'text':
-                        vars_found.update(pattern.findall(item.get('text', '')))
-        # Check prompt queue too
-        for prompt in self.prompt_queue:
-            vars_found.update(pattern.findall(prompt))
-        return vars_found
+                        item['text'] = interpolate_text(item['text'])
+        self.prompt_queue = [interpolate_text(p) for p in self.prompt_queue]
+        return self
 
-    def run(self, **kwargs):
+    def get_template_vars(self, split=False):
+        """
+        Return placeholder variable names found in all prompts.
+
+        Args:
+            split: If True, returns dict with 'required' and 'optional' sets.
+                   If False (default), returns flat set of all var names (without ? suffix).
+
+        Returns:
+            set or dict: Variable names. Optional vars are marked with ? suffix in templates.
+                e.g., {text} is required, {context?} is optional
+        """
+        import re
+        required_pattern = re.compile(r'\{(\w+)\}')  # {var}
+        optional_pattern = re.compile(r'\{(\w+)\?\}')  # {var?}
+
+        required = set()
+        optional = set()
+
+        def extract_from_text(text):
+            # Find optional first (so we don't double-count)
+            opt = set(optional_pattern.findall(text))
+            optional.update(opt)
+            # Find all {word} patterns, exclude those that are optional
+            all_vars = set(required_pattern.findall(text))
+            required.update(all_vars - opt)
+
+        for msg in self.chat_msgs:
+            content = msg.get('content', '')
+            if isinstance(content, str):
+                extract_from_text(content)
+            elif isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get('type') == 'text':
+                        extract_from_text(item.get('text', ''))
+
+        for prompt in self.prompt_queue:
+            extract_from_text(prompt)
+
+        if split:
+            return {'required': required, 'optional': optional}
+        return required | optional
+
+    def run(self, __input__=None, **kwargs):
         """
         Execute the LLM with template variable interpolation.
-        
+
         Interpolates {key} placeholders in all chat_msgs with provided kwargs,
         runs the prediction, and returns the response directly.
-        
+
+        Supports optional variables with {var?} syntax - these become empty string if not provided.
+
         This enables "LLM as function" usage:
             dcf = LLM().sys("Analyze {ticker}").user("Provide DCF valuation")
             result = dcf.run(ticker="TSLA")
-        
+            # Or if only one required var:
+            result = dcf.run("TSLA")
+
         Args:
+            __input__: Single positional arg mapped to the sole required variable (if exactly one).
             **kwargs: Template variables to interpolate (e.g., ticker="TSLA").
                       Any unknown kwargs are passed to the prediction (model, temperature, etc.)
-        
+
         Returns:
             str: The assistant's response content.
         """
-        # Separate template vars from prediction kwargs
-        template_vars = self.get_template_vars()
-        interp_kwargs = {k: v for k, v in kwargs.items() if k in template_vars}
-        pred_kwargs = {k: v for k, v in kwargs.items() if k not in template_vars}
-        
-        # Validate all template vars are provided
-        missing = template_vars - set(interp_kwargs.keys())
+        template_vars = self.get_template_vars(split=True)
+
+        # Handle single positional arg when there's exactly one required var
+        if __input__ is not None:
+            if len(template_vars['required']) != 1:
+                raise ValueError(f"Positional argument only works with exactly 1 required variable, found: {template_vars['required']}")
+            var_name = next(iter(template_vars['required']))
+            kwargs[var_name] = __input__
+
+        all_vars = template_vars['required'] | template_vars['optional']
+        interp_kwargs = {k: v for k, v in kwargs.items() if k in all_vars}
+        pred_kwargs = {k: v for k, v in kwargs.items() if k not in all_vars}
+
+        missing = template_vars['required'] - set(interp_kwargs.keys())
         if missing:
-            raise ValueError(f"Missing template variables: {missing}")
-        
+            raise ValueError(f"Missing required template variables: {missing}")
+
         self._interpolate_templates(**interp_kwargs)
         self._run_prediction(**pred_kwargs)
         last_res = self.last()
         self._reset_msgs()
         return last_res
 
-    def run_json(self, enforce=True, **kwargs):
+    def run_json(self, __input__=None, enforce=True, **kwargs):
         """
         Execute the LLM with template interpolation, returning parsed JSON.
-        
+
         Same as run() but enforces JSON mode and parses the response.
-        
+        Supports optional variables with {var?} syntax.
+
         Args:
+            __input__: Single positional arg mapped to the sole required variable (if exactly one).
             enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
             **kwargs: Template variables and/or prediction kwargs.
-        
+
         Returns:
             dict: The parsed JSON response. Returns empty dict on parsing error.
         """
-        # Separate template vars from prediction kwargs
-        template_vars = self.get_template_vars()
-        interp_kwargs = {k: v for k, v in kwargs.items() if k in template_vars}
-        pred_kwargs = {k: v for k, v in kwargs.items() if k not in template_vars}
-        
-        # Validate all template vars are provided
-        missing = template_vars - set(interp_kwargs.keys())
+        template_vars = self.get_template_vars(split=True)
+
+        # Handle single positional arg when there's exactly one required var
+        if __input__ is not None:
+            if len(template_vars['required']) != 1:
+                raise ValueError(f"Positional argument only works with exactly 1 required variable, found: {template_vars['required']}")
+            var_name = next(iter(template_vars['required']))
+            kwargs[var_name] = __input__
+
+        all_vars = template_vars['required'] | template_vars['optional']
+        interp_kwargs = {k: v for k, v in kwargs.items() if k in all_vars}
+        pred_kwargs = {k: v for k, v in kwargs.items() if k not in all_vars}
+
+        missing = template_vars['required'] - set(interp_kwargs.keys())
         if missing:
-            raise ValueError(f"Missing template variables: {missing}")
-        
+            raise ValueError(f"Missing required template variables: {missing}")
+
         self._interpolate_templates(**interp_kwargs)
         self._run_prediction(jsn_mode=True, **pred_kwargs)
         last_res = self._strip_markdown_json(self.last())
@@ -461,37 +512,66 @@ class LLM:
     def _handle_model_category(self, category_str):
         """Handle category aliases like 'best', 'fast', 'optimal', 'codex'.
 
-        Also supports deterministic selection with numeric suffix:
-        - best0, best1, cheap2 -> select exact rank in category
-        - best, fast, optimal -> random selection from top N
+        Supports:
+        - Simple numbers (1, 2, 3...): zipped ranking where odd=optimal, even=best
+          1=top optimal, 2=top best, 3=second optimal, 4=second best, etc.
+        - Category with 1-indexed suffix (best1, optimal2): select exact rank in category
+        - Category name alone (best, optimal): random selection from top N
 
         Returns None if not a valid category.
         """
+        import re
         valid_categories = ['best', 'cheap', 'fast', 'open', 'optimal', 'codex', 'reasoning', 'search']
 
-        # Default: use optimal category
         if category_str is None:
-            category_str = "optimal"
+            category_str = "optimal1"
 
-        # Check for deterministic selection (e.g., best0, cheap1, optimal2)
-        import re
-        match = re.match(r'^([a-z]+)(\d+)$', str(category_str).lower())
+        category_str = str(category_str)
+
+        # Simple number: zipped optimal/best ranking (1=optimal[0], 2=best[0], 3=optimal[1], etc.)
+        if category_str.isdigit():
+            rank = int(category_str)
+            if rank < 1:
+                raise ValueError(f"Model rank must be >= 1, got {rank}")
+            optimal_entries = model_rankings.get('optimal', [])
+            best_entries = model_rankings.get('best', [])
+            zipped = []
+            max_len = max(len(optimal_entries), len(best_entries))
+            for i in range(max_len):
+                if i < len(optimal_entries):
+                    zipped.append(('optimal', optimal_entries[i]))
+                if i < len(best_entries):
+                    zipped.append(('best', best_entries[i]))
+            if rank > len(zipped):
+                raise ValueError(f"Rank {rank} not available (max: {len(zipped)})")
+            category, entry = zipped[rank - 1]
+            model_name = _get_model_name(entry)
+            effort = _get_reasoning_effort(entry)
+            if effort and not getattr(self, 'reasoning_effort', None):
+                self.reasoning_effort = effort
+                self.reasoning_enabled = True
+            return model_name
+
+        # Category with 1-indexed suffix (e.g., best1, optimal2)
+        match = re.match(r'^([a-z]+)(\d+)$', category_str.lower())
         if match:
             base_category = match.group(1)
-            rank_index = int(match.group(2))
+            rank = int(match.group(2))
             if base_category in valid_categories:
                 entries = model_rankings.get(base_category, [])
+                if rank < 1:
+                    raise ValueError(f"Rank must be >= 1, got {rank}")
+                rank_index = rank - 1
                 if rank_index < len(entries):
                     entry = entries[rank_index]
                     model_name = _get_model_name(entry)
-                    # Set reasoning effort from rankings if present
                     effort = _get_reasoning_effort(entry)
                     if effort and not getattr(self, 'reasoning_effort', None):
                         self.reasoning_effort = effort
                         self.reasoning_enabled = True
                     return model_name
                 else:
-                    raise ValueError(f"Rank {rank_index} not available for {base_category} (max: {len(entries)-1})")
+                    raise ValueError(f"Rank {rank} not available for {base_category} (max: {len(entries)})")
             return None
 
         # Random selection from category
@@ -500,7 +580,6 @@ class LLM:
             if not candidates:
                 raise ValueError(f"No models available for category: {category_str}")
             selected = random.choice(candidates)
-            # Find the entry to get reasoning_effort
             for entry in model_rankings.get(category_str.lower(), []):
                 if _get_model_name(entry) == selected:
                     effort = _get_reasoning_effort(entry)
@@ -880,6 +959,75 @@ class LLM:
             self.chat_msgs = []
         self.prompt_queue_remaining = len(self.prompt_queue)
 
+    def generate(self, description: str) -> 'LLM':
+        """
+        Generate a configured LLM instance from a natural language description.
+
+        Uses the current instance's configuration (model, reasoning, search) as the
+        "generator LLM" to interpret the description and configure a new LLM instance.
+
+        Args:
+            description: Natural language description of the desired LLM behavior.
+                Example: "A DCF analyst that takes a stock ticker"
+                Example: "Text summarizer producing 3 bullets"
+
+        Returns:
+            LLM: A newly configured LLM instance ready to use with .run() or .run_json()
+
+        Example:
+            # Basic usage
+            summarizer = LLM().generate("Text summarizer producing 3 bullets")
+            result = summarizer.run(text="...")
+
+            # Using a powerful generator
+            analyst = LLM(model='best', reasoning=True).generate(
+                "A senior DCF analyst that takes a stock ticker"
+            )
+            result = analyst.run(ticker="NVDA")
+        """
+        from .generator_tools import GeneratorToolkit, GENERATOR_SYSTEM_PROMPT
+
+        target = LLM(v=False)
+        toolkit = GeneratorToolkit(target)
+
+        generator = LLM(
+            model=self.model,
+            temperature=self.temperature,
+            stream=False,
+            v=self.v,
+            search=self.search_enabled,
+            reasoning=self.reasoning_enabled,
+            search_context_size=self.search_context_size,
+            reasoning_effort=self.reasoning_effort,
+        )
+
+        generator.sys(GENERATOR_SYSTEM_PROMPT)
+        generator.tools(fns=toolkit.get_tools())
+        generator.user(description).chat()
+
+        if toolkit._vision_required and not target._has_vision(target.model):
+            target._update_model_to_vision()
+
+        if toolkit._json_output_requested:
+            target._json_output_requested = True
+
+        target._generated_from = description
+        target._generation_summary = toolkit.configuration_summary
+
+        # Print expected variables
+        vars_info = target.get_template_vars(split=True)
+        req = vars_info['required']
+        opt = vars_info['optional']
+        if req or opt:
+            parts = []
+            if req:
+                parts.append(f"required: {', '.join(sorted(req))}")
+            if opt:
+                parts.append(f"optional: {', '.join(sorted(opt))}")
+            print(f"Generated LLM expects: {' | '.join(parts)}")
+
+        return target
+
     def queue(self, prompt):
         """
         Queue a user message to be sent automatically after the next assistant response.
@@ -1078,6 +1226,12 @@ class LLM:
             "search_annotations": self.search_annotations,
             "costs": self.costs,
         }
+        if hasattr(self, '_generated_from'):
+            state["generated_from"] = self._generated_from
+        if hasattr(self, '_generation_summary'):
+            state["generation_summary"] = self._generation_summary
+        if hasattr(self, '_json_output_requested'):
+            state["json_output_requested"] = self._json_output_requested
         with open(filepath, 'w') as f:
             json.dump(state, f, indent=2)
         print(f"Saved instance {filepath}!")
@@ -1156,6 +1310,12 @@ class LLM:
             llm.search_annotations = state["search_annotations"]
         if "costs" in state:
             llm.costs = state["costs"]
+        if "generated_from" in state:
+            llm._generated_from = state["generated_from"]
+        if "generation_summary" in state:
+            llm._generation_summary = state["generation_summary"]
+        if "json_output_requested" in state:
+            llm._json_output_requested = state["json_output_requested"]
         print(f"Loaded instance {filepath}!")
         return llm
     
