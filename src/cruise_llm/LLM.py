@@ -10,7 +10,7 @@ import rapidfuzz
 import random
 from pathlib import Path
 
-_RANKINGS_PATH = Path(__file__).parent / "rankings" / "static_rankings_2026-01-21.json"
+_RANKINGS_PATH = Path(__file__).parent / "rankings" / "static_rankings_2026-02-06.json"
 with open(_RANKINGS_PATH, "r") as f:
     _raw_rankings = json.load(f)
 
@@ -62,7 +62,7 @@ class LLM:
     saving and loading preset workflows and prompt queues, 
     and easy tool integration without manual schema definition.
     """
-    def __init__(self, model=None, temperature=None, stream=False, v=True, debug=False, max_tokens=None, search=False, reasoning=False, search_context_size="medium", reasoning_effort="medium",sub_closest_model=True):
+    def __init__(self, model=None, temperature=None, stream=False, v=True, debug=False, max_tokens=None, search=False, reasoning=False, search_context_size="medium", reasoning_effort="medium",sub_closest_model=True, auto_compact=30):
         """
         Initialize the LLM client.
 
@@ -118,6 +118,7 @@ class LLM:
         if self.reasoning_enabled:
             if not self._has_reasoning(self.model):
                 self._update_model_to_reasoning()
+        self.auto_compact = auto_compact
         self.reasoning_contents = []
         self.search_annotations = []
         self.max_tokens = max_tokens
@@ -759,6 +760,8 @@ class LLM:
         })
 
     def _run_prediction(self, jsn_mode=False, **kwargs):
+        if self.auto_compact and len(self.chat_msgs) >= self.auto_compact:
+            self.compact()
         args = self._resolve_args(**kwargs)
         args['model'] = self._check_model(args['model'])
         model_lower = args['model'].lower()
@@ -1131,6 +1134,63 @@ class LLM:
             self.chat_msgs = []
         self.prompt_queue_remaining = len(self.prompt_queue)
 
+    def compact(self, model=None):
+        """
+        Summarize older messages into a structured summary appended to the system prompt,
+        keeping the last 10 messages for continuity. Useful for long conversations approaching
+        context limits.
+
+        Args:
+            model (str, optional): Model to use for summarization. Defaults to self.model.
+
+        Returns:
+            self: For chaining.
+        """
+        compact_model = model or self.model
+        has_system = self.chat_msgs and self.chat_msgs[0]['role'] == 'system'
+        non_system_msgs = self.chat_msgs[1:] if has_system else self.chat_msgs
+
+        if len(non_system_msgs) <= 10:
+            return self
+
+        keep = 10
+        to_summarize = non_system_msgs[:-keep]
+        to_keep = non_system_msgs[-keep:]
+
+        formatted = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in to_summarize if isinstance(m.get('content'), str))
+
+        existing_summary = None
+        if has_system:
+            sys_content = self.chat_msgs[0]['content']
+            marker = "## Conversation Summary"
+            if marker in sys_content:
+                existing_summary = sys_content[sys_content.index(marker) + len(marker):].strip()
+
+        if existing_summary:
+            prompt = f"Update this conversation summary by incorporating the new messages. Merge into existing sections, don't regenerate from scratch.\n\nExisting summary:\n{existing_summary}\n\nNew messages:\n{formatted}"
+        else:
+            prompt = f"Summarize this conversation into a structured summary with these sections:\n**Intent**: What the user is trying to accomplish\n**Key Points**: Important decisions, preferences, constraints\n**Progress**: What has been done so far\n**Status**: Where things stand now\n\nBe concise but preserve all important context.\n\n{formatted}"
+
+        summarizer = LLM(model=compact_model, stream=False, v=False, auto_compact=0)
+        summary = summarizer.sys("You are a conversation summarizer. Output only the structured summary, nothing else.").user(prompt).result()
+
+        if has_system:
+            sys_content = self.chat_msgs[0]['content']
+            marker = "## Conversation Summary"
+            if marker in sys_content:
+                self.chat_msgs[0]['content'] = sys_content[:sys_content.index(marker)] + f"## Conversation Summary\n{summary}"
+            else:
+                self.chat_msgs[0]['content'] += f"\n\n## Conversation Summary\n{summary}"
+        else:
+            self.chat_msgs = [{"role": "system", "content": f"## Conversation Summary\n{summary}"}]
+
+        self.chat_msgs = [self.chat_msgs[0]] + to_keep
+
+        if self.v:
+            print(f"Compacted: summarized {len(to_summarize)} messages, keeping {len(to_keep)}")
+
+        return self
+
     def generate(self, description: str) -> 'LLM':
         """
         Generate a configured LLM instance from a natural language description.
@@ -1424,6 +1484,7 @@ class LLM:
             "reasoning_contents": self.reasoning_contents,
             "search_annotations": self.search_annotations,
             "costs": self.costs,
+            "auto_compact": self.auto_compact,
         }
         if hasattr(self, '_generated_from'):
             state["generated_from"] = self._generated_from
@@ -1509,6 +1570,8 @@ class LLM:
             llm.search_annotations = state["search_annotations"]
         if "costs" in state:
             llm.costs = state["costs"]
+        if "auto_compact" in state:
+            llm.auto_compact = state["auto_compact"]
         if "generated_from" in state:
             llm._generated_from = state["generated_from"]
         if "generation_summary" in state:

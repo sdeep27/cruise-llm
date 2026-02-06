@@ -1,0 +1,754 @@
+{
+  "best": [
+    {
+      "model": "claude-opus-4-6",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gpt-5.2-2025-12-11",
+      "reasoning_effort": "xhigh"
+    },
+    {
+      "model": "claude-opus-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-3-pro-preview",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gpt-5.1",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gpt-5.2",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gpt-5",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gpt-5-pro",
+      "reasoning_effort": "medium"
+    },
+    {
+      "model": "xai/grok-4"
+    },
+    {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "o3"
+    },
+    {
+      "model": "o3-pro"
+    },
+    {
+      "model": "xai/grok-4-1-fast-reasoning",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-4-fast-reasoning",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-2.5-pro"
+    },
+    {
+      "model": "groq/openai/gpt-oss-120b",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "o4-mini",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "claude-4-sonnet-20250514",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-3-mini",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "claude-3-7-sonnet-20250219",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "groq/moonshotai/kimi-k2-instruct-0905"
+    },
+    {
+      "model": "o1"
+    },
+    {
+      "model": "xai/grok-code-fast-1"
+    },
+    {
+      "model": "gpt-5-nano",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "o3-mini"
+    },
+    {
+      "model": "o1-pro"
+    },
+    {
+      "model": "gpt-4.1"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash-preview-09-2025",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-3"
+    },
+    {
+      "model": "groq/openai/gpt-oss-20b",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "o1-preview"
+    },
+    {
+      "model": "xai/grok-4-1-fast"
+    },
+    {
+      "model": "xai/grok-4-fast-non-reasoning"
+    },
+    {
+      "model": "gpt-4.1-mini"
+    },
+    {
+      "model": "claude-4-opus-20250514",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "o1-mini"
+    },
+    {
+      "model": "gemini/gemini-2.0-flash-thinking-exp-01-21",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash-lite-preview-09-2025"
+    },
+    {
+      "model": "gpt-4o-2024-08-06"
+    },
+    {
+      "model": "claude-3-5-haiku-20241022"
+    },
+    {
+      "model": "gemini/gemini-2.0-flash"
+    },
+    {
+      "model": "groq/meta-llama/llama-4-maverick-17b-128e-instruct"
+    },
+    {
+      "model": "groq/qwen/qwen3-32b",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-1.5-pro"
+    },
+    {
+      "model": "gpt-4o"
+    },
+    {
+      "model": "gemini/gemini-2.0-flash-live-001"
+    },
+    {
+      "model": "gpt-4o-2024-05-13"
+    },
+    {
+      "model": "groq/llama-3.3-70b-versatile"
+    },
+    {
+      "model": "xai/grok-2-1212"
+    },
+    {
+      "model": "gemini/gemini-1.5-flash"
+    },
+    {
+      "model": "gpt-4-turbo"
+    },
+    {
+      "model": "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+    },
+    {
+      "model": "xai/grok-beta"
+    },
+    {
+      "model": "gpt-4.1-nano"
+    },
+    {
+      "model": "gpt-4"
+    },
+    {
+      "model": "gpt-4o-mini"
+    },
+    {
+      "model": "claude-3-opus-20240229"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash-lite"
+    },
+    {
+      "model": "gemini/gemini-1.5-flash-8b"
+    },
+    {
+      "model": "gemini/gemma-3-27b-it"
+    },
+    {
+      "model": "claude-3-haiku-20240307"
+    },
+    {
+      "model": "gpt-3.5-turbo"
+    }
+  ],
+  "fast": [
+    {
+      "model": "gemini/gemini-2.5-flash-lite-preview-09-2025"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash-lite"
+    },
+    {
+      "model": "groq/openai/gpt-oss-120b",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash-preview-09-2025",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "groq/openai/gpt-oss-20b",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gpt-4o"
+    },
+    {
+      "model": "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+    },
+    {
+      "model": "claude-3-haiku-20240307"
+    },
+    {
+      "model": "xai/grok-3-mini",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "groq/meta-llama/llama-4-maverick-17b-128e-instruct"
+    },
+    {
+      "model": "gpt-4.1-nano"
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-4-fast-non-reasoning"
+    },
+    {
+      "model": "gpt-3.5-turbo"
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "groq/llama-3.3-70b-versatile"
+    },
+    {
+      "model": "gpt-4.1"
+    },
+    {
+      "model": "gpt-4.1-mini"
+    },
+    {
+      "model": "xai/grok-4-1-fast"
+    },
+    {
+      "model": "gpt-4o-2024-08-06"
+    },
+    {
+      "model": "gpt-4o-2024-05-13"
+    },
+    {
+      "model": "gpt-4o-mini"
+    },
+    {
+      "model": "groq/qwen/qwen3-32b",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "groq/moonshotai/kimi-k2-instruct-0905"
+    },
+    {
+      "model": "xai/grok-3"
+    },
+    {
+      "model": "claude-3-5-haiku-20241022"
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-opus-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-4-sonnet-20250514",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-opus-4-6",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-4-fast-reasoning",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-code-fast-1"
+    },
+    {
+      "model": "claude-4-opus-20250514",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-3-pro-preview",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gpt-4"
+    },
+    {
+      "model": "gpt-4-turbo"
+    },
+    {
+      "model": "o3"
+    },
+    {
+      "model": "xai/grok-4-1-fast-reasoning",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemma-3-27b-it"
+    },
+    {
+      "model": "o3-mini"
+    },
+    {
+      "model": "gpt-5",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gemini/gemini-2.5-pro"
+    },
+    {
+      "model": "gpt-5.1",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "xai/grok-4"
+    },
+    {
+      "model": "gpt-5-nano",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "o1"
+    },
+    {
+      "model": "gpt-5.2-2025-12-11",
+      "reasoning_effort": "xhigh"
+    },
+    {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "o4-mini",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gpt-5-pro",
+      "reasoning_effort": "medium"
+    },
+    {
+      "model": "o3-pro"
+    }
+  ],
+  "cheap": [
+    {
+      "model": "gpt-5-nano",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "groq/openai/gpt-oss-120b",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "xai/grok-4-fast-reasoning",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-4-1-fast-reasoning",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-3-mini",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "xai/grok-code-fast-1"
+    },
+    {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash-preview-09-2025",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "groq/moonshotai/kimi-k2-instruct-0905"
+    },
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "o3-mini"
+    },
+    {
+      "model": "o4-mini",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gpt-5.1",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gemini/gemini-2.5-pro"
+    },
+    {
+      "model": "gpt-5-pro",
+      "reasoning_effort": "medium"
+    },
+    {
+      "model": "gpt-5",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gpt-4.1"
+    },
+    {
+      "model": "o3"
+    },
+    {
+      "model": "gemini/gemini-3-pro-preview",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gpt-5.2-2025-12-11",
+      "reasoning_effort": "xhigh"
+    },
+    {
+      "model": "gpt-5.2",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-4-sonnet-20250514",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-4"
+    },
+    {
+      "model": "xai/grok-3"
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-3-7-sonnet-20250219",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-opus-4-6",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-opus-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "o1"
+    },
+    {
+      "model": "o3-pro"
+    },
+    {
+      "model": "o1-pro"
+    }
+  ],
+  "codex": [
+    {
+      "model": "gpt-5.2-codex",
+      "reasoning_effort": "xhigh"
+    },
+    {
+      "model": "gpt-5-codex",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gpt-5.1-codex",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "gpt-5.1-codex-mini",
+      "reasoning_effort": "high"
+    }
+  ],
+  "open": [
+    {
+      "model": "groq/openai/gpt-oss-120b",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "groq/moonshotai/kimi-k2-instruct-0905"
+    },
+    {
+      "model": "groq/openai/gpt-oss-20b",
+      "reasoning_effort": "high"
+    },
+    {
+      "model": "groq/meta-llama/llama-4-maverick-17b-128e-instruct"
+    },
+    {
+      "model": "groq/qwen/qwen3-32b",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "groq/llama-3.3-70b-versatile"
+    },
+    {
+      "model": "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+    }
+  ],
+  "optimal": [
+    {
+      "model": "gemini/gemini-3-flash-preview",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash-preview-09-2025",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-opus-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-opus-4-6",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash-lite-preview-09-2025"
+    },
+    {
+      "model": "gpt-4.1"
+    },
+    {
+      "model": "xai/grok-4-fast-non-reasoning"
+    },
+    {
+      "model": "groq/moonshotai/kimi-k2-instruct-0905"
+    },
+    {
+      "model": "xai/grok-4-fast-reasoning",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-4-sonnet-20250514",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "o3"
+    },
+    {
+      "model": "xai/grok-4-1-fast"
+    },
+    {
+      "model": "gpt-4.1-mini"
+    },
+    {
+      "model": "gpt-4o"
+    },
+    {
+      "model": "groq/meta-llama/llama-4-maverick-17b-128e-instruct"
+    },
+    {
+      "model": "xai/grok-4-1-fast-reasoning",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-3"
+    },
+    {
+      "model": "gpt-5.2",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "xai/grok-4"
+    },
+    {
+      "model": "xai/grok-code-fast-1"
+    },
+    {
+      "model": "o3-pro"
+    },
+    {
+      "model": "gemini/gemini-2.5-pro"
+    },
+    {
+      "model": "gpt-4o-2024-08-06"
+    },
+    {
+      "model": "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+    },
+    {
+      "model": "gemini/gemini-2.5-flash-lite"
+    },
+    {
+      "model": "groq/llama-3.3-70b-versatile"
+    },
+    {
+      "model": "o3-mini"
+    },
+    {
+      "model": "o1"
+    },
+    {
+      "model": "claude-3-7-sonnet-20250219",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gpt-4.1-nano"
+    },
+    {
+      "model": "groq/qwen/qwen3-32b",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "claude-3-5-haiku-20241022"
+    },
+    {
+      "model": "claude-4-opus-20250514",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gpt-4o-2024-05-13"
+    },
+    {
+      "model": "o1-pro"
+    },
+    {
+      "model": "claude-3-haiku-20240307"
+    },
+    {
+      "model": "o1-preview"
+    },
+    {
+      "model": "gpt-3.5-turbo"
+    },
+    {
+      "model": "gpt-4o-mini"
+    },
+    {
+      "model": "o1-mini"
+    },
+    {
+      "model": "gemini/gemini-2.0-flash-thinking-exp-01-21",
+      "reasoning_effort": "default"
+    },
+    {
+      "model": "gemini/gemini-2.0-flash"
+    },
+    {
+      "model": "gpt-4-turbo"
+    },
+    {
+      "model": "gemini/gemini-1.5-pro"
+    },
+    {
+      "model": "gpt-4"
+    },
+    {
+      "model": "gemini/gemini-2.0-flash-live-001"
+    },
+    {
+      "model": "xai/grok-2-1212"
+    },
+    {
+      "model": "gemini/gemini-1.5-flash"
+    },
+    {
+      "model": "xai/grok-beta"
+    },
+    {
+      "model": "gemini/gemma-3-27b-it"
+    },
+    {
+      "model": "claude-3-opus-20240229"
+    },
+    {
+      "model": "gemini/gemini-1.5-flash-8b"
+    }
+  ]
+}

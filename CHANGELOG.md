@@ -9,6 +9,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-02-06
+
+### Added
+- **`.compact()`**: Summarize older messages to manage long conversations
+  - Keeps last 10 messages, summarizes the rest into a structured summary appended to system prompt
+  - Iterative: subsequent compactions merge into existing summary rather than regenerating
+  - Optional `model=` override for the summarization LLM
+- **`auto_compact`**: Automatic compaction when conversations get long
+  - `LLM(auto_compact=30)` (default) — compacts when messages reach 30
+  - `LLM(auto_compact=0)` to disable
+
+### Changed
+- Updated model rankings (2026-02-06)
+
+---
+
 ## [0.6.0] - 2026-02-06
 
 ### Added

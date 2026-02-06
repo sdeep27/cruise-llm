@@ -143,6 +143,22 @@ chat2.save_llm("chats/bitcoin_analysis_best_model.json")
 
 ---
 
+### Context Compaction
+
+Long conversations auto-compact to stay within context limits:
+
+```python
+llm = LLM(auto_compact=30)  # compacts at 30 messages (default)
+
+# Or compact manually at any time
+llm.compact()
+
+# Disable auto-compact
+LLM(auto_compact=0)
+```
+
+---
+
 ### Model Discovery & A/B Testing
 
 Pick specific models or get up-to-date top-10 from category:
