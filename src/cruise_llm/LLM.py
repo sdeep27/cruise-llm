@@ -39,6 +39,19 @@ def _get_reasoning_effort(entry):
 load_dotenv()
 litellm.drop_params = True
 
+_AUDIO_FORMAT_MAP = {
+    '.wav': 'wav', '.mp3': 'mp3', '.m4a': 'mp3',
+    '.ogg': 'ogg', '.flac': 'flac', '.aac': 'aac',
+    '.opus': 'opus', '.webm': 'webm',
+}
+
+# litellm hasn't caught up with audio support flags for these yet
+_AUDIO_INPUT_OVERRIDES = {
+    "gemini/gemini-3-flash-preview",
+    "gemini/gemini-2.5-flash",
+    "gemini/gemini-2.5-flash-lite",
+}
+
 class LLM:
     """
     A chainable, stateful wrapper around LiteLLM for building composable agents and workflows.
@@ -135,6 +148,43 @@ class LLM:
         with open(image_source, "rb") as f:
             b64 = base64.b64encode(f.read()).decode("utf-8")
         return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}}
+
+    def _detect_audio_format(self, source):
+        """Detect audio format from file path or URL extension."""
+        from urllib.parse import urlparse
+        path = urlparse(source).path if source.startswith(('http://', 'https://')) else source
+        ext = Path(path).suffix.lower()
+        if ext in _AUDIO_FORMAT_MAP:
+            return _AUDIO_FORMAT_MAP[ext]
+        if source.startswith(('http://', 'https://')):
+            try:
+                import urllib.request
+                req = urllib.request.Request(source, method='HEAD')
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    ct = resp.headers.get('Content-Type', '')
+                    # e.g. "audio/mpeg" -> "mp3", "audio/wav" -> "wav"
+                    if '/' in ct:
+                        sub = ct.split('/')[1].split(';')[0].strip()
+                        if sub == 'mpeg':
+                            return 'mp3'
+                        return sub
+            except Exception:
+                pass
+        return 'wav'
+
+    def _process_audio(self, audio_source):
+        """Process an audio file path or URL into a litellm input_audio content block."""
+        import urllib.request
+        fmt = self._detect_audio_format(audio_source)
+        if audio_source.startswith(('http://', 'https://')):
+            req = urllib.request.Request(audio_source)
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = resp.read()
+        else:
+            with open(audio_source, "rb") as f:
+                data = f.read()
+        b64 = base64.b64encode(data).decode("utf-8")
+        return {"type": "input_audio", "input_audio": {"data": b64, "format": fmt}}
 
     def _strip_markdown_json(self, text):
         """Strip markdown code block wrapper from JSON if present."""
@@ -591,10 +641,10 @@ class LLM:
 
         return None
 
-    def get_models_for_category(self, category_str, search=False, reasoning=False, vision=False):
+    def get_models_for_category(self, category_str, search=False, reasoning=False, vision=False, audio=False):
         """
         Retrieve the list of models associated with a specific alias category.
-        Optionally filter by capability (search, reasoning, vision).
+        Optionally filter by capability (search, reasoning, vision, audio).
 
         Categories are defined in the static rankings file.
 
@@ -603,14 +653,15 @@ class LLM:
             search (bool): If True, only return models that support web search.
             reasoning (bool): If True, only return models that support reasoning.
             vision (bool): If True, only return models that support vision.
+            audio (bool): If True, only return models that support audio input.
 
         Returns:
             list: A list of model names (strings) sorted by rank for that category.
         """
         entries = model_rankings.get(category_str, [])
-        
+
         # If filtering by capability, get all models first, filter, then apply limit
-        if search or reasoning or vision:
+        if search or reasoning or vision or audio:
             models = [_get_model_name(entry) for entry in entries]
             if search:
                 models = [m for m in models if self._has_search(m)]
@@ -618,6 +669,8 @@ class LLM:
                 models = [m for m in models if self._has_reasoning(m)]
             if vision:
                 models = [m for m in models if self._has_vision(m)]
+            if audio:
+                models = [m for m in models if self._has_audio_input(m)]
             return models[:10]
         
         # Default behavior: apply category-specific limits
@@ -825,40 +878,109 @@ class LLM:
         "Currently tool calls are not supported for streaming responses. To be added."
         pass
     
-    def user(self, prompt, image=None):
+    def user(self, prompt=None, image=None, audio=None):
         """
         Add a User message to the history.
 
         Args:
-            prompt (str): The message content.
+            prompt (str, optional): The message content. Can be omitted when audio is the entire input.
             image (str or list, optional): Path(s) to image file(s) or URL(s) to attach.
                 If provided, will check if current model supports vision and switch if needed.
+            audio (str or list, optional): Path(s) to audio file(s) or URL(s) to attach.
+                If provided, will check if current model supports audio input and switch if needed.
 
         Returns:
             self: For chaining.
             Generally is followed by an inference call -> .chat, .result etc. or a preset .asst message
         """
-        if image is None:
+        has_media = image is not None or audio is not None
+
+        if not has_media:
             content = prompt
         else:
-            # Check if current model supports vision, switch if needed
-            if not self._has_vision(self.model):
+            if image is not None and not self._has_vision(self.model):
                 self._update_model_to_vision()
-            images = [image] if isinstance(image, str) else image
-            content = [{"type": "text", "text": prompt}]
-            for img in images:
-                content.append(self._process_image(img))
+            if audio is not None and not self._has_audio_input(self.model):
+                self._update_model_to_audio_input()
+
+            content = []
+            if prompt is not None:
+                content.append({"type": "text", "text": prompt})
+            if image is not None:
+                images = [image] if isinstance(image, str) else image
+                for img in images:
+                    content.append(self._process_image(img))
+            if audio is not None:
+                audios = [audio] if isinstance(audio, str) else audio
+                for aud in audios:
+                    content.append(self._process_audio(aud))
+
         user_msg_obj = {"role": "user", "content": content}
         self.chat_msgs.append(user_msg_obj)
         if self.v:
             print(f"USER:")
-            print(f"{prompt}\n")
+            if prompt:
+                print(f"{prompt}\n")
             if image:
                 img_count = 1 if isinstance(image, str) else len(image)
                 print(f"[{img_count} image(s) attached]\n")
+            if audio:
+                aud_count = 1 if isinstance(audio, str) else len(audio)
+                print(f"[{aud_count} audio file(s) attached]\n")
         return self
     
     u = usr = user
+
+    def transcribe(self, audio, model=None):
+        """
+        Standalone transcription utility using litellm.transcription().
+
+        Args:
+            audio (str or list): Path(s) or URL(s) to audio file(s).
+            model (str, optional): Transcription model. Defaults to trying whisper-1,
+                then groq/whisper-large-v3-turbo.
+
+        Returns:
+            str or list: Transcribed text. String for single file, list for multiple.
+        """
+        models_to_try = [model] if model else ["whisper-1", "groq/whisper-large-v3-turbo", "groq/whisper-large-v3"]
+        audios = [audio] if isinstance(audio, str) else audio
+        results = []
+        for aud in audios:
+            # Download URL to temp file if needed
+            if aud.startswith(('http://', 'https://')):
+                import urllib.request, tempfile
+                fmt = self._detect_audio_format(aud)
+                req = urllib.request.Request(aud)
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    data = resp.read()
+                tmp = tempfile.NamedTemporaryFile(suffix=f'.{fmt}', delete=False)
+                tmp.write(data)
+                tmp.close()
+                file_path = tmp.name
+            else:
+                file_path = aud
+
+            audio_file = open(file_path, "rb")
+            transcribed = False
+            for m in models_to_try:
+                try:
+                    if self.v:
+                        print(f"Transcribing with {m}...")
+                    resp = litellm.transcription(model=m, file=audio_file)
+                    results.append(resp.text)
+                    transcribed = True
+                    if self.v:
+                        print(f"Transcription: {resp.text[:200]}{'...' if len(resp.text) > 200 else ''}\n")
+                    break
+                except Exception:
+                    audio_file.seek(0)
+                    continue
+            audio_file.close()
+            if not transcribed:
+                raise RuntimeError(f"Transcription failed for {aud} with models: {models_to_try}")
+
+        return results[0] if isinstance(audio, str) else results
 
     def asst(self, prompt_response, merge=False):
         """
@@ -1058,6 +1180,9 @@ class LLM:
         if toolkit._vision_required and not target._has_vision(target.model):
             target._update_model_to_vision()
 
+        if toolkit._audio_required and not target._has_audio_input(target.model):
+            target._update_model_to_audio_input()
+
         if toolkit._json_output_requested:
             target._json_output_requested = True
 
@@ -1198,6 +1323,26 @@ class LLM:
                     print(f'Updated model for vision: {model}')
                     return
 
+    def _has_audio_input(self, model):
+        if model in _AUDIO_INPUT_OVERRIDES:
+            return True
+        return litellm.supports_audio_input(model=model) == True
+
+    def _update_model_to_audio_input(self):
+        for category in ["optimal", "best"]:
+            for entry in model_rankings.get(category, []):
+                model = _get_model_name(entry)
+                if self._has_audio_input(model):
+                    self.model = model
+                    self._clamp_reasoning_effort()
+                    print(f'Updated model for audio: {model}')
+                    return
+
+    def _clamp_reasoning_effort(self):
+        """Normalize reasoning_effort after a model switch so provider-specific values (e.g. xhigh) don't break the new model."""
+        if self.reasoning_effort and self.reasoning_effort not in {"low", "medium", "high", "default", "minimal"}:
+            self.reasoning_effort = "high"
+
     def get_models(self, model_str=None, text_model=True):
         """
         List available models, optionally filtered by name.
@@ -1228,7 +1373,11 @@ class LLM:
     def models_with_vision(self, model_str=None):
         possible_models = self.get_models(model_str)
         return [model for model in possible_models if litellm.supports_vision(model=model) == True]
-    
+
+    def models_with_audio_input(self, model_str=None):
+        possible_models = self.get_models(model_str)
+        return [model for model in possible_models if litellm.supports_audio_input(model=model) == True]
+
     def to_md(self, filename):
         """Export the chat history to a Markdown file."""
         lines = []

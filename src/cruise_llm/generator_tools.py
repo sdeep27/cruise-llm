@@ -7,6 +7,7 @@ class GeneratorToolkit:
         self.configuration_summary = ""
         self._json_output_requested = False
         self._vision_required = False
+        self._audio_required = False
 
     def get_tools(self) -> list:
         """Return list of tool functions for the generator LLM."""
@@ -16,6 +17,7 @@ class GeneratorToolkit:
             self.enable_reasoning,
             self.enable_search,
             self.require_vision,
+            self.require_audio,
             self.set_system_prompt,
             self.set_input,
             self.require_json_output,
@@ -109,6 +111,17 @@ class GeneratorToolkit:
         """
         self._vision_required = True
         return "Vision capability flagged as required"
+
+    def require_audio(self) -> str:
+        """
+        Flag that this LLM will need to process audio input.
+        The system will ensure an audio-capable model is selected.
+
+        Returns:
+            Confirmation message
+        """
+        self._audio_required = True
+        return "Audio input capability flagged as required"
 
     def set_system_prompt(self, prompt: str) -> str:
         """

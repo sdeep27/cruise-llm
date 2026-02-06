@@ -9,6 +9,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-02-06
+
+### Added
+- **Audio support**: `.user(audio="file.mp3")` sends audio natively to models
+  - Supports WAV, MP3, FLAC, OGG, M4A, AAC, OPUS, WebM formats
+  - `prompt` is now optional in `.user()` — audio can be the entire input
+  - Auto-switches to audio-capable model when current model doesn't support it
+  - Multiple audio files: `.user("Compare", audio=["a.wav", "b.wav"])`
+  - Combined with images: `.user("Describe", image="photo.jpg", audio="clip.wav")`
+  - URL audio downloaded and base64-encoded automatically
+- **`.transcribe()`**: Standalone transcription utility via Whisper
+  - `LLM().transcribe("recording.wav")` — tries whisper-1, then groq/whisper variants
+  - Supports single files or lists, local paths or URLs
+- **`models_with_audio_input()`**: Discover audio-capable models
+- **`evaluate()`**: Pairwise LLM output comparison and ranking
+  - `evaluate(results, prompts, metrics)` for ranking multiple outputs
+  - `LLM.evaluate_last()` for scoring single responses with absolute metrics
+  - Auto-generated metrics when none provided
+  - Position swap for bias mitigation (default on)
+  - Bradley-Terry sampling for >5 items
+- **`require_audio()` generator tool**: `generate()` can now flag audio capability
+
+### Changed
+- `get_models_for_category()` accepts `audio=True` filter
+- Model auto-switch now normalizes reasoning_effort for cross-provider compatibility
+
+---
+
 ## [0.5.0] - 2026-02-02
 
 ### Added
