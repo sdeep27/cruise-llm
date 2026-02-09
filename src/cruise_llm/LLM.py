@@ -1,8 +1,11 @@
+from __future__ import annotations
 import litellm
 from litellm import completion, responses
 import json
+import copy
 import base64
 import mimetypes
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from function_schema import get_function_schema
 import logging
@@ -62,7 +65,7 @@ class LLM:
     saving and loading preset workflows and prompt queues, 
     and easy tool integration without manual schema definition.
     """
-    def __init__(self, model=None, temperature=None, stream=False, v=True, debug=False, max_tokens=None, search=False, reasoning=False, search_context_size="medium", reasoning_effort="medium",sub_closest_model=True, auto_compact=30):
+    def __init__(self, model=None, temperature=None, stream=False, v=True, debug=False, max_tokens=None, search=False, reasoning=False, search_context_size="medium", reasoning_effort="medium",sub_closest_model=True, auto_compact=30, max_retries=2):
         """
         Initialize the LLM client.
 
@@ -119,6 +122,7 @@ class LLM:
             if not self._has_reasoning(self.model):
                 self._update_model_to_reasoning()
         self.auto_compact = auto_compact
+        self.max_retries = max_retries
         self.reasoning_contents = []
         self.search_annotations = []
         self.max_tokens = max_tokens
@@ -227,7 +231,7 @@ class LLM:
             "total_cost": total_cost,
         })
 
-    def tools(self, fns = [], search=False, search_context_size=None, reasoning=False, reasoning_effort=None):
+    def tools(self, fns = [], search=False, search_context_size=None, reasoning=False, reasoning_effort=None) -> LLM:
         """
         Register tools (functions) or enable capabilities like Web Search or Reasoning.
         Automatically generates JSON schemas from the provided Python functions.
@@ -282,7 +286,7 @@ class LLM:
                 self.reasoning_effort = None
         return self
 
-    def chat(self, **kwargs):
+    def chat(self, **kwargs) -> LLM:
         """
         Run the LLM prediction based on current history, appending the response to the internal log.
         Generally follows a .user update, e.g. LLM().user("hi").chat()
@@ -299,10 +303,10 @@ class LLM:
 
     c = ch = chat
 
-    def chat_json(self, **kwargs):
+    def chat_json(self, **kwargs) -> LLM:
         """
         Same as `chat()`, but enforces JSON mode on the model response.
-        
+
         Returns:
             self: For chaining.
         """
@@ -311,9 +315,9 @@ class LLM:
     
     cjson = c_json = ch_json = chat_json
 
-    def result(self, **kwargs):
+    def result(self, **kwargs) -> str:
         """
-        Run the prediction, return the response text, and reset the chat history 
+        Run the prediction, return the response text, and reset the chat history
         (preserving the System prompt).
 
         Useful for single-turn tasks where you don't want history functionality 
@@ -332,7 +336,7 @@ class LLM:
     
     r = res = result
 
-    def result_json(self, enforce=True, **kwargs):
+    def result_json(self, enforce=True, **kwargs) -> dict:
         """
         Run the prediction in JSON mode, parse the result, and reset chat history.
         (preserving the System prompt).
@@ -433,7 +437,7 @@ class LLM:
             return {'required': required, 'optional': optional}
         return required | optional
 
-    def run(self, __input__=None, **kwargs):
+    def run(self, __input__=None, **kwargs) -> str:
         """
         Execute the LLM with template variable interpolation.
 
@@ -479,7 +483,7 @@ class LLM:
         self._reset_msgs()
         return last_res
 
-    def run_json(self, __input__=None, enforce=True, **kwargs):
+    def run_json(self, __input__=None, enforce=True, **kwargs) -> dict:
         """
         Execute the LLM with template interpolation, returning parsed JSON.
 
@@ -523,7 +527,121 @@ class LLM:
             print(f"!! Error parsing JSON: {last_res}")
             return {}
 
-    def last_json(self, enforce=True):
+    def _clone_for_batch(self) -> LLM:
+        """Create an isolated LLM copy for batch execution (shares no mutable state)."""
+        clone = LLM.__new__(LLM)
+        clone.chat_msgs = copy.deepcopy(self.chat_msgs)
+        clone.prompt_queue = list(self.prompt_queue)
+        clone.prompt_queue_remaining = self.prompt_queue_remaining
+        clone.logs = []
+        clone.response_metadatas = []
+        clone.costs = []
+        clone.last_chunk_metadata = None
+        clone.reasoning_contents = []
+        clone.search_annotations = []
+        clone.available_models = self.available_models
+        clone.model = self.model
+        clone.temperature = self.temperature
+        clone.stream = False
+        clone.v = False
+        clone.max_tokens = self.max_tokens
+        clone.max_retries = self.max_retries
+        clone.sub_closest_model = self.sub_closest_model
+        clone.available_tools = self.available_tools
+        clone.schemas = self.schemas
+        clone.tool_choice = self.tool_choice
+        clone.parallel_tool_calls = self.parallel_tool_calls
+        clone.fn_map = self.fn_map
+        clone.search_enabled = self.search_enabled
+        clone.search_context_size = self.search_context_size
+        clone.reasoning_enabled = self.reasoning_enabled
+        clone.reasoning_effort = self.reasoning_effort
+        clone.auto_compact = self.auto_compact
+        return clone
+
+    def batch_run(self, inputs, concurrency=5, return_errors=False) -> list[str]:
+        """
+        Run the LLM template across multiple inputs concurrently.
+
+        Each input gets an isolated LLM instance. Results are returned in input order.
+
+        Args:
+            inputs (list[dict]): List of template variable dicts, e.g. [{"text": "hello"}, {"text": "bye"}]
+            concurrency (int): Max parallel threads. Defaults to 5.
+            return_errors (bool): If True, failed calls return {"error": str, "input": dict} instead of raising.
+
+        Returns:
+            list[str]: Results in input order.
+
+        Example:
+            classifier = LLM().sys("Classify sentiment").user("Text: {text}")
+            results = classifier.batch_run([{"text": "great"}, {"text": "awful"}], concurrency=10)
+        """
+        results = [None] * len(inputs)
+        errors = []
+
+        def _exec(index, input_kwargs):
+            clone = self._clone_for_batch()
+            try:
+                return index, clone.run(**input_kwargs), clone.costs
+            except Exception as e:
+                if return_errors:
+                    return index, {"error": str(e), "input": input_kwargs}, []
+                raise
+
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(_exec, i, inp): i for i, inp in enumerate(inputs)}
+            for future in as_completed(futures):
+                idx, result, costs = future.result()
+                results[idx] = result
+                self.costs.extend(costs)
+
+        if self.v:
+            total = sum(c["total_cost"] for c in self.costs)
+            print(f"batch_run: {len(inputs)} calls, total cost: ${total:.6f}")
+
+        return results
+
+    def batch_run_json(self, inputs, concurrency=5, return_errors=False, enforce=True) -> list[dict]:
+        """
+        Run the LLM template across multiple inputs concurrently, returning parsed JSON.
+
+        Each input gets an isolated LLM instance. Results are returned in input order.
+
+        Args:
+            inputs (list[dict]): List of template variable dicts.
+            concurrency (int): Max parallel threads. Defaults to 5.
+            return_errors (bool): If True, failed calls return {"error": str, "input": dict} instead of raising.
+            enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
+
+        Returns:
+            list[dict]: Parsed JSON results in input order.
+        """
+        results = [None] * len(inputs)
+
+        def _exec(index, input_kwargs):
+            clone = self._clone_for_batch()
+            try:
+                return index, clone.run_json(enforce=enforce, **input_kwargs), clone.costs
+            except Exception as e:
+                if return_errors:
+                    return index, {"error": str(e), "input": input_kwargs}, []
+                raise
+
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(_exec, i, inp): i for i, inp in enumerate(inputs)}
+            for future in as_completed(futures):
+                idx, result, costs = future.result()
+                results[idx] = result
+                self.costs.extend(costs)
+
+        if self.v:
+            total = sum(c["total_cost"] for c in self.costs)
+            print(f"batch_run_json: {len(inputs)} calls, total cost: ${total:.6f}")
+
+        return results
+
+    def last_json(self, enforce=True) -> dict:
         """
         Parse the last assistant response as JSON, stripping markdown fences if present.
 
@@ -642,7 +760,7 @@ class LLM:
 
         return None
 
-    def get_models_for_category(self, category_str, search=False, reasoning=False, vision=False, audio=False):
+    def get_models_for_category(self, category_str, search=False, reasoning=False, vision=False, audio=False) -> list[str]:
         """
         Retrieve the list of models associated with a specific alias category.
         Optionally filter by capability (search, reasoning, vision, audio).
@@ -776,7 +894,7 @@ class LLM:
             "messages": self.chat_msgs,
             "logger_fn": self._logger_fn,
             "max_tokens": args['max_tokens'],
-            "num_retries": 2,
+            "num_retries": self.max_retries,
             "stream": args['stream'],
         }
         if self.available_tools:
@@ -881,7 +999,7 @@ class LLM:
         "Currently tool calls are not supported for streaming responses. To be added."
         pass
     
-    def user(self, prompt=None, image=None, audio=None):
+    def user(self, prompt=None, image=None, audio=None) -> LLM:
         """
         Add a User message to the history.
 
@@ -985,7 +1103,7 @@ class LLM:
 
         return results[0] if isinstance(audio, str) else results
 
-    def asst(self, prompt_response, merge=False):
+    def asst(self, prompt_response, merge=False) -> LLM:
         """
         Manually append an Assistant message to the conversation history.
 
@@ -1010,9 +1128,9 @@ class LLM:
             self.chat_msgs.append({"role": "assistant", "content": prompt_response})
         return self
     
-    a = asssistant = asst
+    a = assistant = asssistant = asst
 
-    def sys(self, prompt, append=True):
+    def sys(self, prompt, append=True) -> LLM:
         """
         Add or update the System message.
 
@@ -1045,7 +1163,7 @@ class LLM:
 
     system = s = sys
 
-    def last(self):
+    def last(self) -> str | None:
         """
         Retrieve the content of the most recent Assistant message.
 
@@ -1059,25 +1177,54 @@ class LLM:
 
     msg = last_msg = last
 
-    def last_cost(self, warn=True):
+    def last_cost(self, warn=True) -> float | None:
         """Return the cost of the most recent completion, or None if no costs tracked."""
         if warn and self.search_enabled:
             print("Warning: Search is enabled. Cost may not include search-specific charges.")
         return self.costs[-1]["total_cost"] if self.costs else None
 
-    def total_cost(self, warn=True):
+    def total_cost(self, warn=True) -> float:
         """Return the sum of all completion costs in this session."""
         if warn and self.search_enabled:
             print("Warning: Search is enabled. Cost may not include search-specific charges.")
         return sum(c["total_cost"] for c in self.costs)
 
-    def all_costs(self, warn=True):
+    def all_costs(self, warn=True) -> list[dict]:
         """Return the full array of cost objects for all completions."""
         if warn and self.search_enabled:
             print("Warning: Search is enabled. Costs may not include search-specific charges.")
         return self.costs
 
-    def evaluate_last(self, include_prompt=False, additional_information='', metrics=None, penalize_verbosity=False, v=True):
+    def cost_report(self) -> dict:
+        """Return a summary of all costs tracked in this session.
+
+        Returns:
+            dict with total_cost, num_calls, avg_cost, total_input_tokens,
+            total_output_tokens, and by_model breakdown.
+        """
+        total_cost = sum(c["total_cost"] for c in self.costs)
+        num_calls = len(self.costs)
+        total_input = sum(c["input_tokens"] for c in self.costs)
+        total_output = sum(c["output_tokens"] for c in self.costs)
+        by_model = {}
+        for c in self.costs:
+            m = c["model"]
+            if m not in by_model:
+                by_model[m] = {"total_cost": 0, "num_calls": 0, "input_tokens": 0, "output_tokens": 0}
+            by_model[m]["total_cost"] += c["total_cost"]
+            by_model[m]["num_calls"] += 1
+            by_model[m]["input_tokens"] += c["input_tokens"]
+            by_model[m]["output_tokens"] += c["output_tokens"]
+        return {
+            "total_cost": total_cost,
+            "num_calls": num_calls,
+            "avg_cost": total_cost / num_calls if num_calls else 0,
+            "total_input_tokens": total_input,
+            "total_output_tokens": total_output,
+            "by_model": by_model,
+        }
+
+    def evaluate_last(self, include_prompt=False, additional_information='', metrics=None, penalize_verbosity=False, v=True) -> dict:
         """
         Evaluate the last assistant response using absolute scoring.
 
@@ -1134,7 +1281,7 @@ class LLM:
             self.chat_msgs = []
         self.prompt_queue_remaining = len(self.prompt_queue)
 
-    def compact(self, model=None):
+    def compact(self, model=None) -> LLM:
         """
         Summarize older messages into a structured summary appended to the system prompt,
         keeping the last 10 messages for continuity. Useful for long conversations approaching
@@ -1263,7 +1410,7 @@ class LLM:
 
         return target
 
-    def queue(self, prompt):
+    def queue(self, prompt) -> LLM:
         """
         Queue a user message to be sent automatically after the next assistant response.
         Useful for defining a multi-turn conversation script in advance.
@@ -1280,7 +1427,7 @@ class LLM:
 
     followup = then = queue 
 
-    def fwd(self, fwd_llm, instructions=''):
+    def fwd(self, fwd_llm, instructions='') -> LLM:
         """
         Forward the last response from this LLM to another LLM instance.
 
@@ -1403,7 +1550,7 @@ class LLM:
         if self.reasoning_effort and self.reasoning_effort not in {"low", "medium", "high", "default", "minimal"}:
             self.reasoning_effort = "high"
 
-    def get_models(self, model_str=None, text_model=True):
+    def get_models(self, model_str=None, text_model=True) -> list[str]:
         """
         List available models, optionally filtered by name.
 
@@ -1455,7 +1602,7 @@ class LLM:
         with open(filename, "w") as f:
             f.write(md_output)       
 
-    def save_llm(self, filepath):
+    def save_llm(self, filepath) -> LLM:
         """
         Serialize the full state of the LLM (config, history, tools) to a JSON file.
 
@@ -1485,6 +1632,7 @@ class LLM:
             "search_annotations": self.search_annotations,
             "costs": self.costs,
             "auto_compact": self.auto_compact,
+            "max_retries": self.max_retries,
         }
         if hasattr(self, '_generated_from'):
             state["generated_from"] = self._generated_from
@@ -1572,6 +1720,8 @@ class LLM:
             llm.costs = state["costs"]
         if "auto_compact" in state:
             llm.auto_compact = state["auto_compact"]
+        if "max_retries" in state:
+            llm.max_retries = state["max_retries"]
         if "generated_from" in state:
             llm._generated_from = state["generated_from"]
         if "generation_summary" in state:

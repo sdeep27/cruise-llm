@@ -9,6 +9,54 @@ LLM().user("Explain quantum computing").chat(stream=True)
 
 ---
 
+### LLM as Function
+
+Define reusable LLM functions with `{placeholders}`, call with `.run()`. Each call is isolated — history resets automatically, so you can call the same template thousands of times without context bleeding.
+
+```python
+# Define with {placeholders}, call with .run()
+sentiment = LLM().sys("Classify sentiment").user("Text: {text}")
+sentiment.run("I love this product!")  # positional arg when 1 required var
+sentiment.run(text="This is terrible")  # or use kwargs
+
+# Optional variables with {var?} syntax
+analyzer = LLM().user("Analyze {ticker} focusing on {aspect?}")
+analyzer.run(ticker="TSLA")                        # aspect becomes ""
+analyzer.run(ticker="TSLA", aspect="growth")       # aspect = "growth"
+
+# JSON output
+extractor = LLM().sys("Extract entities as JSON").user("{text}")
+entities = extractor.run_json("Apple announced new MacBooks")
+```
+
+---
+
+### Batch Processing
+
+Run the same template across many inputs concurrently with `batch_run()`:
+
+```python
+classifier = LLM().sys("Classify sentiment as positive/negative").user("Text: {text}")
+results = classifier.batch_run(
+    [{"text": "Love it!"}, {"text": "Terrible experience"}, {"text": "It's okay"}],
+    concurrency=10,
+)
+# results: ["positive", "negative", ...]
+
+# JSON batch output
+extractor = LLM().sys("Extract entities as JSON with key 'entities'").user("{text}")
+entities = extractor.batch_run_json(
+    [{"text": "Apple launched iPhone"}, {"text": "Google acquired DeepMind"}]
+)
+# entities: [{"entities": ["Apple", "iPhone"]}, {"entities": ["Google", "DeepMind"]}]
+
+# Graceful error handling for production workloads
+results = classifier.batch_run(inputs, return_errors=True)
+# Failed calls return {"error": "...", "input": {...}} instead of raising
+```
+
+---
+
 ### Multi-turn Prompt Queues
 
 Build complex micro-workflows by queuing prompts that the model will execute sequentially.
@@ -122,7 +170,7 @@ print(score["score"])  # 0.82
 
 ### Flexible Conversations
 
-Chat instances with swappable models and minimal verbosity:
+`.chat()` accumulates history for multi-turn conversations. For batch/single-turn work, use `.run()` instead — it resets history automatically after each call.
 
 ```python
 chat1 = (
@@ -211,28 +259,6 @@ analyst.save_llm("agents/dcf_analyst.json")
 
 ---
 
-### LLM as Function
-
-Use LLMs as reusable functions with template variables:
-
-```python
-# Define with {placeholders}, call with .run()
-sentiment = LLM().sys("Classify sentiment").user("Text: {text}")
-sentiment.run("I love this product!")  # positional arg when 1 required var
-sentiment.run(text="This is terrible")  # or use kwargs
-
-# Optional variables with {var?} syntax
-analyzer = LLM().user("Analyze {ticker} focusing on {aspect?}")
-analyzer.run(ticker="TSLA")                        # aspect becomes ""
-analyzer.run(ticker="TSLA", aspect="growth")       # aspect = "growth"
-
-# JSON output
-extractor = LLM().sys("Extract entities as JSON").user("{text}")
-entities = extractor.run_json("Apple announced new MacBooks")
-```
-
----
-
 ### Cost Tracking
 
 Track token usage and costs across your session:
@@ -245,6 +271,10 @@ llm.user("Summarize in one sentence").chat()
 print(f"Last call: ${llm.last_cost():.6f}")
 print(f"Session total: ${llm.total_cost():.6f}")
 print(f"Breakdown: {llm.all_costs()}")
+
+# Full cost report with per-model breakdown
+report = llm.cost_report()
+# {"total_cost": 0.003, "num_calls": 2, "avg_cost": 0.0015, "by_model": {...}}
 ```
 
 ---

@@ -9,6 +9,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-02-09
+
+### Added
+- **`batch_run()`**: Run the same LLM template across many inputs concurrently
+  - `classifier.batch_run([{"text": "great"}, {"text": "awful"}], concurrency=10)`
+  - Uses `ThreadPoolExecutor` with isolated LLM instances per call
+  - Results returned in input order
+  - `return_errors=True` returns `{"error": str, "input": dict}` instead of raising
+  - Cost aggregation printed when `v=True`
+- **`batch_run_json()`**: Same as `batch_run()` but returns parsed JSON dicts
+  - Supports `enforce=True` (default) for LLM-based JSON repair on parse failure
+- **`cost_report()`**: Full cost summary with per-model breakdown
+  - Returns `total_cost`, `num_calls`, `avg_cost`, `total_input_tokens`, `total_output_tokens`, `by_model`
+- **`assistant` alias**: Fixed `asssistant` typo — `assistant` now works (triple-s kept for backward compat)
+- **`max_retries` parameter**: `LLM(max_retries=5)` — configurable instead of hardcoded `2`
+- **Return type hints** on all public methods (`chat() -> LLM`, `run() -> str`, `last() -> str | None`, etc.)
+
+### Changed
+- README reorganized: `.run()` is now the headline API pattern, batch processing section added, `.chat()` documented as the multi-turn option
+
+---
+
 ## [0.7.0] - 2026-02-06
 
 ### Added
