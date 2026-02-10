@@ -231,15 +231,23 @@ class LLM:
             "total_cost": total_cost,
         })
 
-    def tools(self, fns = [], search=False, search_context_size=None, reasoning=False, reasoning_effort=None) -> LLM:
+    def tools(self, fns = [], tool_choice="auto", parallel_tool_calls=True, search=False, search_context_size=None, reasoning=False, reasoning_effort=None) -> LLM:
         """
         Register tools (functions) or enable capabilities like Web Search or Reasoning.
         Automatically generates JSON schemas from the provided Python functions.
 
         Args:
-            fns (list): A list of Python callable functions. Type hints and docstrings 
+            fns (list): A list of Python callable functions. Type hints and docstrings
                 are recommended on the functions for accurate schema generation.
-            search (bool): Enable web search. If the current model doesn't support it, 
+            tool_choice: Controls how the model selects tools. Accepts:
+                - "auto" (default): model decides whether to call a tool
+                - "required": model must call at least one tool
+                - "none": model must not call any tools
+                - A callable (function reference): forces the model to call that specific function.
+                  e.g. tool_choice=get_weather
+            parallel_tool_calls (bool): Allow the model to call multiple tools in parallel.
+                Defaults to True.
+            search (bool): Enable web search. If the current model doesn't support it,
                 attempts to switch to a supported model.
             search_context_size (str, optional): "short", "medium", "long".
             reasoning (bool): Enable reasoning. If current model doesn't support it,
@@ -262,6 +270,10 @@ class LLM:
             tool["function"]["parameters"]["additionalProperties"] = False
             tools.append(tool)
         self.available_tools = tools
+        if callable(tool_choice):
+            tool_choice = {"type": "function", "function": {"name": tool_choice.__name__}}
+        self.tool_choice = tool_choice
+        self.parallel_tool_calls = parallel_tool_calls
         if search:
             if not self._has_search(self.model):
                 self._update_model_to_search()
@@ -477,10 +489,11 @@ class LLM:
         if missing:
             raise ValueError(f"Missing required template variables: {missing}")
 
+        saved_msgs = copy.deepcopy(self.chat_msgs)
         self._interpolate_templates(**interp_kwargs)
         self._run_prediction(**pred_kwargs)
         last_res = self.last()
-        self._reset_msgs()
+        self.chat_msgs = saved_msgs
         return last_res
 
     def run_json(self, __input__=None, enforce=True, **kwargs) -> dict:
@@ -515,10 +528,11 @@ class LLM:
         if missing:
             raise ValueError(f"Missing required template variables: {missing}")
 
+        saved_msgs = copy.deepcopy(self.chat_msgs)
         self._interpolate_templates(**interp_kwargs)
         self._run_prediction(jsn_mode=True, **pred_kwargs)
         last_res = self._strip_markdown_json(self.last())
-        self._reset_msgs()
+        self.chat_msgs = saved_msgs
         try:
             return json.loads(last_res)
         except (json.JSONDecodeError, TypeError):
