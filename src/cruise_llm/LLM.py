@@ -73,8 +73,8 @@ class LLM:
             model (str, optional): The model name (e.g., "gpt-4o", "claude-3-5-sonnet") or a category alias
                 ("best", "fast", "cheap", "open", "optimal", "codex"). Supports deterministic selection
                 with 1-indexed suffix (e.g., "best1", "optimal2") or simple numbers (1, 2, 3...) which
-                zip optimal and best rankings (1=top optimal, 2=top best, 3=second optimal, etc.).
-                Defaults to "optimal1" (top optimal model).
+                zip best and optimal rankings (1=top best, 2=top optimal, 3=second best, etc.).
+                Defaults to "best1" (top best model).
             temperature (float, optional): Sampling temperature.
             stream (bool): If True, streams output to stdout.
             v (bool): Verbosity flag. If True, prints prompts, tool calls, and responses to stdout.
@@ -449,7 +449,7 @@ class LLM:
             return {'required': required, 'optional': optional}
         return required | optional
 
-    def run(self, __input__=None, **kwargs) -> str:
+    def run(self, __input__=None, **kwargs) -> str | dict:
         """
         Execute the LLM with template variable interpolation.
 
@@ -470,8 +470,11 @@ class LLM:
                       Any unknown kwargs are passed to the prediction (model, temperature, etc.)
 
         Returns:
-            str: The assistant's response content.
+            str | dict: The assistant's response content, or parsed dict if JSON output was requested.
         """
+        if getattr(self, '_json_output_requested', False):
+            return self.run_json(__input__, **kwargs)
+
         template_vars = self.get_template_vars(split=True)
 
         # Handle single positional arg when there's exactly one required var
@@ -707,11 +710,11 @@ class LLM:
         valid_categories = ['best', 'cheap', 'fast', 'open', 'optimal', 'codex', 'reasoning', 'search']
 
         if category_str is None:
-            category_str = "optimal1"
+            category_str = "best1"
 
         category_str = str(category_str)
 
-        # Simple number: zipped optimal/best ranking (1=optimal[0], 2=best[0], 3=optimal[1], etc.)
+        # Simple number: zipped best/optimal ranking (1=best[0], 2=optimal[0], 3=best[1], etc.)
         if category_str.isdigit():
             rank = int(category_str)
             if rank < 1:
@@ -721,10 +724,10 @@ class LLM:
             zipped = []
             max_len = max(len(optimal_entries), len(best_entries))
             for i in range(max_len):
-                if i < len(optimal_entries):
-                    zipped.append(('optimal', optimal_entries[i]))
                 if i < len(best_entries):
                     zipped.append(('best', best_entries[i]))
+                if i < len(optimal_entries):
+                    zipped.append(('optimal', optimal_entries[i]))
             if rank > len(zipped):
                 raise ValueError(f"Rank {rank} not available (max: {len(zipped)})")
             category, entry = zipped[rank - 1]
