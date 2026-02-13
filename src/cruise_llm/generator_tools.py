@@ -5,7 +5,6 @@ class GeneratorToolkit:
         self.target = target_llm
         self.is_done = False
         self.configuration_summary = ""
-        self._json_output_requested = False
         self._vision_required = False
         self._audio_required = False
 
@@ -20,7 +19,6 @@ class GeneratorToolkit:
             self.require_audio,
             self.set_system_prompt,
             self.set_input,
-            self.require_json_output,
             self.done,
         ]
 
@@ -157,17 +155,6 @@ class GeneratorToolkit:
         vars_info = self.target.get_template_vars(split=True)
         return f"Input set - required: {vars_info['required']}, optional: {vars_info['optional']}"
 
-    def require_json_output(self) -> str:
-        """
-        Flag that this LLM should output JSON responses.
-        The user should call .run_json() instead of .run() when executing.
-
-        Returns:
-            Confirmation message
-        """
-        self._json_output_requested = True
-        return "JSON output mode flagged (user should call .run_json())"
-
     def done(self, summary: str) -> str:
         """
         Signal that configuration is complete.
@@ -189,10 +176,12 @@ GENERATOR_SYSTEM_PROMPT = """You are an LLM configuration assistant. Your job is
 
 1. **Understand the task**: Parse what the user wants the LLM to do
 2. **Set the model**: Only use set_specific_model if the user explicitly names a model (e.g., "use gpt-4o", "use claude sonnet"). Otherwise leave as default.
-3. **Set the system prompt**: Write a detailed system prompt defining the role, expertise, and behavior
+3. **Set the system prompt**: Write a detailed system prompt defining the role, expertise, and behavior. The system prompt MUST specify the expected JSON output keys/structure, since all LLMs return JSON via .run().
 4. **Set the input**: Define input format with {variables} for dynamic inputs
-6. **Configure capabilities**: Enable reasoning/search if needed, err on the side of them being needed
-7. **Finalize**: Call done() with a brief summary
+5. **Configure capabilities**: Enable reasoning/search if needed, err on the side of them being needed
+6. **Finalize**: Call done() with a brief summary
+
+**Important**: All configured LLMs return JSON dicts via .run(). The system prompt should specify the expected output keys and structure (e.g., "Return JSON with keys 'sentiment' and 'confidence'").
 
 **Enable reasoning with parameter "high" when:**
 - Task would improve with logic or multi-step analysis
@@ -208,8 +197,8 @@ GENERATOR_SYSTEM_PROMPT = """You are an LLM configuration assistant. Your job is
 Write system prompts that include:
 - Perspective
 - Specific expertise or focus areas if needed
-- Output format expectations if given
-- Be more declarative rather than imperative in your prompting - theres no need for steps.  We go on the side of open and minimal system prompts. 
+- Expected JSON output keys/structure
+- Be more declarative rather than imperative in your prompting - theres no need for steps.  We go on the side of open and minimal system prompts.
 
 Avoid writing system prompts that:
 - Too restrictive and constraining (models are very good now and dont need them)
@@ -227,7 +216,7 @@ Avoid writing system prompts that:
 
 For "A DCF analyst that takes a stock ticker and current date":
 1. enable_reasoning("high")
-2. set_system_prompt with detailed analyst role, DCF methodology, output format
+2. set_system_prompt with detailed analyst role, DCF methodology, JSON output format (e.g., keys: valuation, assumptions, risks)
 3. set_input("{ticker}")
 4. set_input("{current_date}")
 5. done("DCF analyst configured for stock valuation")

@@ -449,74 +449,30 @@ class LLM:
             return {'required': required, 'optional': optional}
         return required | optional
 
-    def run(self, __input__=None, **kwargs) -> str | dict:
+    def run(self, __input__=None, enforce=True, **kwargs) -> dict:
         """
-        Execute the LLM with template variable interpolation.
+        Execute the LLM with template variable interpolation, returning parsed JSON.
 
         Interpolates {key} placeholders in all chat_msgs with provided kwargs,
-        runs the prediction, and returns the response directly.
+        runs the prediction in JSON mode, and returns the parsed response.
 
         Supports optional variables with {var?} syntax - these become empty string if not provided.
 
-        This enables "LLM as function" usage:
-            dcf = LLM().sys("Analyze {ticker}").user("Provide DCF valuation")
-            result = dcf.run(ticker="TSLA")
-            # Or if only one required var:
-            result = dcf.run("TSLA")
-
-        Args:
-            __input__: Single positional arg mapped to the sole required variable (if exactly one).
-            **kwargs: Template variables to interpolate (e.g., ticker="TSLA").
-                      Any unknown kwargs are passed to the prediction (model, temperature, etc.)
-
-        Returns:
-            str | dict: The assistant's response content, or parsed dict if JSON output was requested.
-        """
-        if getattr(self, '_json_output_requested', False):
-            return self.run_json(__input__, **kwargs)
-
-        template_vars = self.get_template_vars(split=True)
-
-        # Handle single positional arg when there's exactly one required var
-        if __input__ is not None:
-            if len(template_vars['required']) != 1:
-                raise ValueError(f"Positional argument only works with exactly 1 required variable, found: {template_vars['required']}")
-            var_name = next(iter(template_vars['required']))
-            kwargs[var_name] = __input__
-
-        all_vars = template_vars['required'] | template_vars['optional']
-        interp_kwargs = {k: v for k, v in kwargs.items() if k in all_vars}
-        pred_kwargs = {k: v for k, v in kwargs.items() if k not in all_vars}
-
-        missing = template_vars['required'] - set(interp_kwargs.keys())
-        if missing:
-            raise ValueError(f"Missing required template variables: {missing}")
-
-        saved_msgs = copy.deepcopy(self.chat_msgs)
-        self._interpolate_templates(**interp_kwargs)
-        self._run_prediction(**pred_kwargs)
-        last_res = self.last()
-        self.chat_msgs = saved_msgs
-        return last_res
-
-    def run_json(self, __input__=None, enforce=True, **kwargs) -> dict:
-        """
-        Execute the LLM with template interpolation, returning parsed JSON.
-
-        Same as run() but enforces JSON mode and parses the response.
-        Supports optional variables with {var?} syntax.
+        This enables "LLM as function" usage (dict in -> dict out):
+            dcf = LLM().sys("Analyze {ticker}. Return JSON with key 'valuation'.").user("{ticker}")
+            result = dcf.run("TSLA")  # returns {"valuation": ...}
 
         Args:
             __input__: Single positional arg mapped to the sole required variable (if exactly one).
             enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
-            **kwargs: Template variables and/or prediction kwargs.
+            **kwargs: Template variables to interpolate (e.g., ticker="TSLA").
+                      Any unknown kwargs are passed to the prediction (model, temperature, etc.)
 
         Returns:
             dict: The parsed JSON response. Returns empty dict on parsing error.
         """
         template_vars = self.get_template_vars(split=True)
 
-        # Handle single positional arg when there's exactly one required var
         if __input__ is not None:
             if len(template_vars['required']) != 1:
                 raise ValueError(f"Positional argument only works with exactly 1 required variable, found: {template_vars['required']}")
@@ -543,6 +499,8 @@ class LLM:
                 return self._enforce_json(last_res)
             print(f"!! Error parsing JSON: {last_res}")
             return {}
+
+    run_json = run
 
     def _clone_for_batch(self) -> LLM:
         """Create an isolated LLM copy for batch execution (shares no mutable state)."""
@@ -576,9 +534,9 @@ class LLM:
         clone.auto_compact = self.auto_compact
         return clone
 
-    def batch_run(self, inputs, concurrency=5, return_errors=False) -> list[str]:
+    def batch_run(self, inputs, concurrency=5, return_errors=False, enforce=True) -> list[dict]:
         """
-        Run the LLM template across multiple inputs concurrently.
+        Run the LLM template across multiple inputs concurrently, returning parsed JSON.
 
         Each input gets an isolated LLM instance. Results are returned in input order.
 
@@ -586,21 +544,22 @@ class LLM:
             inputs (list[dict]): List of template variable dicts, e.g. [{"text": "hello"}, {"text": "bye"}]
             concurrency (int): Max parallel threads. Defaults to 5.
             return_errors (bool): If True, failed calls return {"error": str, "input": dict} instead of raising.
+            enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
 
         Returns:
-            list[str]: Results in input order.
+            list[dict]: Parsed JSON results in input order.
 
         Example:
-            classifier = LLM().sys("Classify sentiment").user("Text: {text}")
+            classifier = LLM().sys("Classify sentiment. Return JSON with key 'sentiment'.").user("{text}")
             results = classifier.batch_run([{"text": "great"}, {"text": "awful"}], concurrency=10)
+            # results: [{"sentiment": "positive"}, {"sentiment": "negative"}]
         """
         results = [None] * len(inputs)
-        errors = []
 
         def _exec(index, input_kwargs):
             clone = self._clone_for_batch()
             try:
-                return index, clone.run(**input_kwargs), clone.costs
+                return index, clone.run(enforce=enforce, **input_kwargs), clone.costs
             except Exception as e:
                 if return_errors:
                     return index, {"error": str(e), "input": input_kwargs}, []
@@ -619,44 +578,7 @@ class LLM:
 
         return results
 
-    def batch_run_json(self, inputs, concurrency=5, return_errors=False, enforce=True) -> list[dict]:
-        """
-        Run the LLM template across multiple inputs concurrently, returning parsed JSON.
-
-        Each input gets an isolated LLM instance. Results are returned in input order.
-
-        Args:
-            inputs (list[dict]): List of template variable dicts.
-            concurrency (int): Max parallel threads. Defaults to 5.
-            return_errors (bool): If True, failed calls return {"error": str, "input": dict} instead of raising.
-            enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
-
-        Returns:
-            list[dict]: Parsed JSON results in input order.
-        """
-        results = [None] * len(inputs)
-
-        def _exec(index, input_kwargs):
-            clone = self._clone_for_batch()
-            try:
-                return index, clone.run_json(enforce=enforce, **input_kwargs), clone.costs
-            except Exception as e:
-                if return_errors:
-                    return index, {"error": str(e), "input": input_kwargs}, []
-                raise
-
-        with ThreadPoolExecutor(max_workers=concurrency) as pool:
-            futures = {pool.submit(_exec, i, inp): i for i, inp in enumerate(inputs)}
-            for future in as_completed(futures):
-                idx, result, costs = future.result()
-                results[idx] = result
-                self.costs.extend(costs)
-
-        if self.v:
-            total = sum(c["total_cost"] for c in self.costs)
-            print(f"batch_run_json: {len(inputs)} calls, total cost: ${total:.6f}")
-
-        return results
+    batch_run_json = batch_run
 
     def last_json(self, enforce=True) -> dict:
         """
@@ -1368,7 +1290,7 @@ class LLM:
                 Example: "Text summarizer producing 3 bullets"
 
         Returns:
-            LLM: A newly configured LLM instance ready to use with .run() or .run_json()
+            LLM: A newly configured LLM instance ready to use with .run()
 
         Example:
             # Basic usage
@@ -1406,9 +1328,6 @@ class LLM:
 
         if toolkit._audio_required and not target._has_audio_input(target.model):
             target._update_model_to_audio_input()
-
-        if toolkit._json_output_requested:
-            target._json_output_requested = True
 
         target._generated_from = description
         target._generation_summary = toolkit.configuration_summary
@@ -1655,8 +1574,6 @@ class LLM:
             state["generated_from"] = self._generated_from
         if hasattr(self, '_generation_summary'):
             state["generation_summary"] = self._generation_summary
-        if hasattr(self, '_json_output_requested'):
-            state["json_output_requested"] = self._json_output_requested
         with open(filepath, 'w') as f:
             json.dump(state, f, indent=2)
         print(f"Saved instance {filepath}!")
@@ -1743,8 +1660,6 @@ class LLM:
             llm._generated_from = state["generated_from"]
         if "generation_summary" in state:
             llm._generation_summary = state["generation_summary"]
-        if "json_output_requested" in state:
-            llm._json_output_requested = state["json_output_requested"]
         print(f"Loaded instance {filepath}!")
         return llm
     

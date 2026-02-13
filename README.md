@@ -11,22 +11,22 @@ LLM().user("Explain quantum computing").chat(stream=True)
 
 ### LLM as Function
 
-Define reusable LLM functions with `{placeholders}`, call with `.run()`. Each call is isolated — history resets automatically, so you can call the same template thousands of times without context bleeding.
+Define reusable LLM functions with `{placeholders}`, call with `.run()`. Each call is isolated — history resets automatically. Dict in, dict out.
 
 ```python
-# Define with {placeholders}, call with .run()
-sentiment = LLM().sys("Classify sentiment").user("Text: {text}")
-sentiment.run("I love this product!")  # positional arg when 1 required var
-sentiment.run(text="This is terrible")  # or use kwargs
+# Define with {placeholders}, call with .run() — always returns a dict
+sentiment = LLM().sys("Classify sentiment. Return JSON with key 'sentiment'.").user("{text}")
+sentiment.run("I love this product!")    # {"sentiment": "positive"}
+sentiment.run(text="This is terrible")   # {"sentiment": "negative"}
 
 # Optional variables with {var?} syntax
-analyzer = LLM().user("Analyze {ticker} focusing on {aspect?}")
+analyzer = LLM().sys("Analyze stock. Return JSON with key 'analysis'.").user("Analyze {ticker} focusing on {aspect?}")
 analyzer.run(ticker="TSLA")                        # aspect becomes ""
 analyzer.run(ticker="TSLA", aspect="growth")       # aspect = "growth"
 
-# JSON output
-extractor = LLM().sys("Extract entities as JSON").user("{text}")
-entities = extractor.run_json("Apple announced new MacBooks")
+# Extract structured data
+extractor = LLM().sys("Extract entities. Return JSON with key 'entities'.").user("{text}")
+extractor.run("Apple announced new MacBooks")  # {"entities": ["Apple", "MacBooks"]}
 ```
 
 ---
@@ -36,16 +36,15 @@ entities = extractor.run_json("Apple announced new MacBooks")
 Run the same template across many inputs concurrently with `batch_run()`:
 
 ```python
-classifier = LLM().sys("Classify sentiment as positive/negative").user("Text: {text}")
+classifier = LLM().sys("Classify sentiment. Return JSON with key 'sentiment'.").user("{text}")
 results = classifier.batch_run(
     [{"text": "Love it!"}, {"text": "Terrible experience"}, {"text": "It's okay"}],
     concurrency=10,
 )
-# results: ["positive", "negative", ...]
+# results: [{"sentiment": "positive"}, {"sentiment": "negative"}, {"sentiment": "neutral"}]
 
-# JSON batch output
-extractor = LLM().sys("Extract entities as JSON with key 'entities'").user("{text}")
-entities = extractor.batch_run_json(
+extractor = LLM().sys("Extract entities. Return JSON with key 'entities'.").user("{text}")
+entities = extractor.batch_run(
     [{"text": "Apple launched iPhone"}, {"text": "Google acquired DeepMind"}]
 )
 # entities: [{"entities": ["Apple", "iPhone"]}, {"entities": ["Google", "DeepMind"]}]
@@ -170,7 +169,7 @@ print(score["score"])  # 0.82
 
 ### Flexible Conversations
 
-`.chat()` accumulates history for multi-turn conversations. For batch/single-turn work, use `.run()` instead — it resets history automatically after each call.
+`.chat()` accumulates history for multi-turn conversations. For batch/single-turn work, use `.run()` instead — it resets history automatically and always returns a parsed JSON dict.
 
 ```python
 chat1 = (
@@ -243,15 +242,15 @@ LLM().models_with_search()
 Create configured LLM instances from natural language:
 
 ```python
-# Generate a specialized LLM
+# Generate a specialized LLM — run() always returns a dict
 summarizer = LLM().generate("Text summarizer that outputs 3 bullet points")
-result = summarizer.run(text="Long article here...")
+result = summarizer.run(text="Long article here...")  # {"bullets": [...]}
 
 # Use a powerful model as the generator for better results
 analyst = LLM(model="best", reasoning=True).generate(
     "A senior financial analyst for DCF valuations"
 )
-result = analyst.run(ticker="NVDA")
+result = analyst.run(ticker="NVDA")  # {"valuation": ..., "assumptions": ...}
 
 # Generated LLMs can be saved and reused
 analyst.save_llm("agents/dcf_analyst.json")

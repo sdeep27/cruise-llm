@@ -480,5 +480,24 @@ class TestImageSupport:
         print(f"   URL image color identified: {response}")
 
 
+class TestBatchRun:
+    """Test batch_run() returns list of dicts with concurrent execution."""
+
+    def test_batch_run_16_inputs_concurrency_8(self):
+        """Test batch_run with 16 inputs at concurrency 8 returns ordered dict results."""
+        llm = LLM(v=False, max_tokens=100)
+        llm.sys("Extract the language of the given word. Return JSON with key 'language'.")
+        llm.user("{word}")
+        inputs = [{"word": w} for w in [
+            "bonjour", "hola", "ciao", "danke", "spasibo",
+            "arigato", "annyeong", "merhaba", "shalom", "namaste",
+            "sawadee", "xin chao", "jambo", "aloha", "salam", "hej"
+        ]]
+        results = llm.batch_run(inputs, concurrency=8)
+        assert len(results) == 16
+        assert all(isinstance(r, dict) for r in results)
+        assert all("language" in r for r in results)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
