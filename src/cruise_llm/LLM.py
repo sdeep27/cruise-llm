@@ -362,6 +362,7 @@ class LLM:
         """
         Interpolate {placeholder} template variables in all chat messages.
         Handles both required {var} and optional {var?} syntax.
+        Uses regex substitution so literal JSON braces are never touched.
 
         Args:
             **kwargs: Template variables to interpolate (e.g., ticker="TSLA")
@@ -372,13 +373,16 @@ class LLM:
         import re
 
         def interpolate_text(text):
-            # First, handle optional vars {var?} - replace with value or empty string
             def replace_optional(match):
                 var_name = match.group(1)
                 return str(kwargs.get(var_name, ''))
             text = re.sub(r'\{(\w+)\?\}', replace_optional, text)
-            # Then handle required vars with standard format
-            return text.format(**kwargs)
+            def replace_required(match):
+                var_name = match.group(1)
+                if var_name in kwargs:
+                    return str(kwargs[var_name])
+                return match.group(0)
+            return re.sub(r'\{(\w+)\}', replace_required, text)
 
         for msg in self.chat_msgs:
             content = msg.get('content', '')

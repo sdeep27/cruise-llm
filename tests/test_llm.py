@@ -505,6 +505,50 @@ class TestRunBatch:
         assert llm.batch_run_json == llm.run_batch
 
 
+class TestTemplateInterpolation:
+    """Test that template interpolation handles JSON braces safely."""
+
+    def test_json_braces_in_system_prompt(self):
+        """Template vars should work when system prompt contains literal JSON braces."""
+        llm = LLM(v=False)
+        llm.sys('Return JSON like {"title": "string", "body": "string"}')
+        llm.user('{text}')
+        llm._interpolate_templates(text="hello world")
+        assert llm.chat_msgs[0]['content'] == 'Return JSON like {"title": "string", "body": "string"}'
+        assert llm.chat_msgs[1]['content'] == 'hello world'
+
+    def test_json_braces_in_user_prompt(self):
+        """Literal JSON in user prompt should not be treated as template vars."""
+        llm = LLM(v=False)
+        llm.user('Parse this: {"key": "value"} and also {text}')
+        llm._interpolate_templates(text="replaced")
+        assert '{"key": "value"}' in llm.chat_msgs[0]['content']
+        assert 'replaced' in llm.chat_msgs[0]['content']
+
+    def test_interpolated_value_with_braces(self):
+        """Values containing JSON braces should be inserted correctly."""
+        llm = LLM(v=False)
+        llm.user('{payload}')
+        llm._interpolate_templates(payload='{"title": "hello"}')
+        assert llm.chat_msgs[0]['content'] == '{"title": "hello"}'
+
+    def test_optional_vars_with_json(self):
+        """Optional vars should work alongside literal JSON."""
+        llm = LLM(v=False)
+        llm.sys('Output format: {"result": true}')
+        llm.user('{text} {context?}')
+        llm._interpolate_templates(text="test")
+        assert '{"result": true}' in llm.chat_msgs[0]['content']
+        assert llm.chat_msgs[1]['content'] == 'test '
+
+    def test_no_vars_leaves_text_unchanged(self):
+        """Text with no matching vars should pass through untouched."""
+        llm = LLM(v=False)
+        llm.user('No vars here, just {unknown} and {"json": true}')
+        llm._interpolate_templates()
+        assert llm.chat_msgs[0]['content'] == 'No vars here, just {unknown} and {"json": true}'
+
+
 class TestRunUnified:
     """Test that run() handles both template and non-template cases (replaces result_json)."""
 
