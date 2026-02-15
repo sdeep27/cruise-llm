@@ -211,8 +211,18 @@ class LLM:
         enforcer = LLM(model="fast", stream=False, v=False) \
             .sys('You are a JSON enforcer. The user will provide text that should be valid JSON but may have issues. Return ONLY valid JSON that can be parsed by json.loads. Fix any syntax errors, missing brackets, or malformed structures. Output nothing except the corrected JSON.') \
             .user('{text}')
-        result = enforcer.run_json(text=text, enforce=False)  # enforce=False to avoid recursion
-        return result
+        return enforcer.run(text=text, enforce=False)
+
+    def _parse_json(self, text, enforce=True):
+        """Strip markdown fences, parse JSON, optionally enforce with LLM repair."""
+        text = self._strip_markdown_json(text)
+        try:
+            return json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            if enforce:
+                return self._enforce_json(text)
+            print(f"!! Error parsing JSON: {text}")
+            return {}
 
     def _track_cost(self, response, model):
         usage = getattr(response, 'usage', None)
@@ -348,31 +358,6 @@ class LLM:
     
     r = res = result
 
-    def result_json(self, enforce=True, **kwargs) -> dict:
-        """
-        Run the prediction in JSON mode, parse the result, and reset chat history.
-        (preserving the System prompt).
-
-        Args:
-            enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
-            **kwargs: Overrides for run-specific settings.
-
-        Returns:
-            dict: The parsed JSON response. Returns empty dict on parsing error.
-        """
-        self._run_prediction(jsn_mode=True, **kwargs)
-        last_res = self._strip_markdown_json(self.last())
-        self._reset_msgs()
-        try:
-            return json.loads(last_res)
-        except (json.JSONDecodeError, TypeError):
-            if enforce:
-                return self._enforce_json(last_res)
-            print(f"!! Error parsing JSON: {last_res}")
-            return {}
-
-    rjson = res_json = result_json
-
     def _interpolate_templates(self, **kwargs):
         """
         Interpolate {placeholder} template variables in all chat messages.
@@ -490,17 +475,12 @@ class LLM:
         saved_msgs = copy.deepcopy(self.chat_msgs)
         self._interpolate_templates(**interp_kwargs)
         self._run_prediction(jsn_mode=True, **pred_kwargs)
-        last_res = self._strip_markdown_json(self.last())
+        result = self._parse_json(self.last(), enforce)
         self.chat_msgs = saved_msgs
-        try:
-            return json.loads(last_res)
-        except (json.JSONDecodeError, TypeError):
-            if enforce:
-                return self._enforce_json(last_res)
-            print(f"!! Error parsing JSON: {last_res}")
-            return {}
+        return result
 
     run_json = run
+    result_json = rjson = res_json = run
 
     def _clone_for_batch(self) -> LLM:
         """Create an isolated LLM copy for batch execution (shares no mutable state)."""
@@ -534,7 +514,7 @@ class LLM:
         clone.auto_compact = self.auto_compact
         return clone
 
-    def batch_run(self, inputs, concurrency=5, return_errors=False, enforce=True) -> list[dict]:
+    def run_batch(self, inputs, concurrency=3, return_errors=False, enforce=True) -> list[dict]:
         """
         Run the LLM template across multiple inputs concurrently, returning parsed JSON.
 
@@ -542,7 +522,7 @@ class LLM:
 
         Args:
             inputs (list[dict]): List of template variable dicts, e.g. [{"text": "hello"}, {"text": "bye"}]
-            concurrency (int): Max parallel threads. Defaults to 5.
+            concurrency (int): Max parallel threads. Defaults to 3.
             return_errors (bool): If True, failed calls return {"error": str, "input": dict} instead of raising.
             enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
 
@@ -551,7 +531,7 @@ class LLM:
 
         Example:
             classifier = LLM().sys("Classify sentiment. Return JSON with key 'sentiment'.").user("{text}")
-            results = classifier.batch_run([{"text": "great"}, {"text": "awful"}], concurrency=10)
+            results = classifier.run_batch([{"text": "great"}, {"text": "awful"}], concurrency=10)
             # results: [{"sentiment": "positive"}, {"sentiment": "negative"}]
         """
         results = [None] * len(inputs)
@@ -574,30 +554,16 @@ class LLM:
 
         if self.v:
             total = sum(c["total_cost"] for c in self.costs)
-            print(f"batch_run: {len(inputs)} calls, total cost: ${total:.6f}")
+            print(f"run_batch: {len(inputs)} calls, total cost: ${total:.6f}")
 
         return results
 
-    batch_run_json = batch_run
+    batch_run = run_batch
+    batch_run_json = run_batch
 
     def last_json(self, enforce=True) -> dict:
-        """
-        Parse the last assistant response as JSON, stripping markdown fences if present.
-
-        Args:
-            enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
-
-        Returns:
-            dict: The parsed JSON response. Returns empty dict on parsing error.
-        """
-        last_res = self._strip_markdown_json(self.last())
-        try:
-            return json.loads(last_res)
-        except (json.JSONDecodeError, TypeError):
-            if enforce:
-                return self._enforce_json(last_res)
-            print(f"!! Error parsing JSON: {last_res}")
-            return {}
+        """Parse the last assistant response as JSON, stripping markdown fences if present."""
+        return self._parse_json(self.last(), enforce)
 
     def _check_model(self, inputted_model):
         if not self.sub_closest_model:

@@ -9,6 +9,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-02-15
+
+### Changed
+- **`run()` is the unified JSON interface**: `run()`, `run_json()`, `result_json()`, `res_json()`, and `rjson()` all route to a single method — always returns parsed JSON dicts. `run()` works with or without template variables.
+- **`batch_run()` renamed to `run_batch()`**: Consistent naming under `run`. `batch_run` and `batch_run_json` kept as aliases.
+- **`run_batch()` default concurrency lowered**: From 5 to 3 for safer defaults with rate-limited APIs.
+- **`tool_choice` accepts callables**: Pass a function reference to force the model to call that specific tool
+  - `LLM().tools(fns=[get_weather], tool_choice=get_weather)`
+  - Also supports `"required"`, `"none"`, and `"auto"` (default)
+- Internal: extracted `_parse_json()` helper — JSON parsing, markdown stripping, and LLM repair in one place
+- Updated model rankings (2026-02-06)
+
+---
+
 ## [0.8.0] - 2026-02-09
 
 ### Added

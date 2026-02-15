@@ -33,24 +33,24 @@ extractor.run("Apple announced new MacBooks")  # {"entities": ["Apple", "MacBook
 
 ### Batch Processing
 
-Run the same template across many inputs concurrently with `batch_run()`:
+Run the same template across many inputs concurrently with `run_batch()`:
 
 ```python
 classifier = LLM().sys("Classify sentiment. Return JSON with key 'sentiment'.").user("{text}")
-results = classifier.batch_run(
+results = classifier.run_batch(
     [{"text": "Love it!"}, {"text": "Terrible experience"}, {"text": "It's okay"}],
     concurrency=10,
 )
 # results: [{"sentiment": "positive"}, {"sentiment": "negative"}, {"sentiment": "neutral"}]
 
 extractor = LLM().sys("Extract entities. Return JSON with key 'entities'.").user("{text}")
-entities = extractor.batch_run(
+entities = extractor.run_batch(
     [{"text": "Apple launched iPhone"}, {"text": "Google acquired DeepMind"}]
 )
 # entities: [{"entities": ["Apple", "iPhone"]}, {"entities": ["Google", "DeepMind"]}]
 
 # Graceful error handling for production workloads
-results = classifier.batch_run(inputs, return_errors=True)
+results = classifier.run_batch(inputs, return_errors=True)
 # Failed calls return {"error": "...", "input": {...}} instead of raising
 ```
 

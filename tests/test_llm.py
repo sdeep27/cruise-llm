@@ -480,11 +480,11 @@ class TestImageSupport:
         print(f"   URL image color identified: {response}")
 
 
-class TestBatchRun:
-    """Test batch_run() returns list of dicts with concurrent execution."""
+class TestRunBatch:
+    """Test run_batch() and backward compat aliases."""
 
-    def test_batch_run_16_inputs_concurrency_8(self):
-        """Test batch_run with 16 inputs at concurrency 8 returns ordered dict results."""
+    def test_run_batch_16_inputs(self):
+        """Test run_batch with 16 inputs returns ordered dict results."""
         llm = LLM(v=False, max_tokens=100)
         llm.sys("Extract the language of the given word. Return JSON with key 'language'.")
         llm.user("{word}")
@@ -493,10 +493,54 @@ class TestBatchRun:
             "arigato", "annyeong", "merhaba", "shalom", "namaste",
             "sawadee", "xin chao", "jambo", "aloha", "salam", "hej"
         ]]
-        results = llm.batch_run(inputs, concurrency=8)
+        results = llm.run_batch(inputs, concurrency=8)
         assert len(results) == 16
         assert all(isinstance(r, dict) for r in results)
         assert all("language" in r for r in results)
+
+    def test_batch_run_alias(self):
+        """Test batch_run backward compat alias."""
+        llm = LLM(v=False)
+        assert llm.batch_run == llm.run_batch
+        assert llm.batch_run_json == llm.run_batch
+
+
+class TestRunUnified:
+    """Test that run() handles both template and non-template cases (replaces result_json)."""
+
+    def test_run_with_templates(self):
+        """Test run() with template variables returns parsed JSON."""
+        llm = LLM(v=False, max_tokens=100)
+        llm.sys("Classify sentiment. Return JSON with key 'sentiment'.")
+        llm.user("{text}")
+        result = llm.run(text="I love this!")
+        assert isinstance(result, dict)
+        assert "sentiment" in result
+
+    def test_run_without_templates(self):
+        """Test run() works with no template variables (old result_json behavior)."""
+        llm = LLM(v=False, max_tokens=100)
+        llm.sys("Extract entities. Return JSON with key 'entities'.")
+        llm.user("Apple announced new MacBooks")
+        result = llm.run()
+        assert isinstance(result, dict)
+        assert "entities" in result
+
+    def test_run_preserves_messages(self):
+        """Test run() preserves chat_msgs (doesn't wipe like old result_json)."""
+        llm = LLM(v=False, max_tokens=100)
+        llm.sys("Return JSON with key 'ok': true.")
+        llm.user("{x}")
+        msg_count_before = len(llm.chat_msgs)
+        llm.run(x="test")
+        assert len(llm.chat_msgs) == msg_count_before
+
+    def test_result_json_is_run(self):
+        """Test result_json/res_json/rjson all point to run."""
+        llm = LLM(v=False)
+        assert llm.result_json == llm.run
+        assert llm.res_json == llm.run
+        assert llm.rjson == llm.run
 
 
 if __name__ == "__main__":
