@@ -299,53 +299,65 @@ def evaluate_single(
     }
 
 
+_DEFAULT_METRICS_PAIRWISE = [
+    "How clear and well-structured is this?",
+    "How interesting and well-written is this?",
+    "How complete and thorough is this?"
+]
+
+_DEFAULT_METRICS_ABSOLUTE = {
+    "How clear and well-structured is this?": "1-10",
+    "How interesting and well-written is this?": "1-10",
+    "How complete and thorough is this?": "1-10"
+}
+
+
 def _generate_metrics(items, additional_information, prompts, results, mode="absolute"):
-    """Auto-generate 3 evaluation metrics based on content.
+    """Auto-generate 3 broad evaluation metrics based on the prompt.
+
+    Only uses the prompt (not the responses) to avoid biasing metrics toward
+    specific output characteristics. Falls back to defaults if no prompt is available.
 
     mode="pairwise" returns list[str], mode="absolute" returns dict.
     """
     from .LLM import LLM
 
-    # Sample items for context
-    sample = items[:3] if len(items) > 3 else items
-    sample_text = "\n\n---\n\n".join(str(s)[:500] for s in sample)
+    # Derive a single prompt string if available
+    prompt_text = None
+    if prompts:
+        unique = list(dict.fromkeys(str(p) for p in prompts if p))
+        if unique:
+            prompt_text = unique[0] if len(unique) == 1 else "\n\n---\n\n".join(unique)
 
-    context_type = "responses"
-    if prompts and not results:
-        context_type = "prompts"
-    elif prompts and results:
-        context_type = "prompt-response pairs"
+    if not prompt_text:
+        return list(_DEFAULT_METRICS_PAIRWISE) if mode == "pairwise" else dict(_DEFAULT_METRICS_ABSOLUTE)
 
     if mode == "pairwise":
         result = LLM(model=1, v=False).sys(
             "You suggest evaluation metrics for comparing LLM outputs. "
+            "Metrics should be broad and general-purpose — relevant to the subject matter "
+            "but not tailored to any specific response. "
             'Return exactly 3 metrics as JSON: {"metrics": ["How ...?", ...]}'
         ).user(
-            f"Suggest 3 evaluation metrics for comparing these {context_type}:\n\n"
-            f"{sample_text}\n\n"
+            f"Suggest 3 broad evaluation metrics for responses to this prompt:\n\n"
+            f"{prompt_text}\n\n"
             f"Additional context: {additional_information or 'General evaluation'}"
         ).res_json()
 
-        return result.get("metrics", [
-            "How clear and well-structured is this?",
-            "How interesting and well-written is this?",
-            "How complete and thorough is this?"
-        ])
+        return result.get("metrics", list(_DEFAULT_METRICS_PAIRWISE))
 
     result = LLM(model=1, v=False).sys(
         "You suggest evaluation metrics for comparing LLM outputs. "
+        "Metrics should be broad and general-purpose — relevant to the subject matter "
+        "but not tailored to any specific response. "
         'Return exactly 3 metrics as JSON: {"metrics": {"How [question]?": "1-10", ...}}'
     ).user(
-        f"Suggest 3 evaluation metrics for comparing these {context_type}:\n\n"
-        f"{sample_text}\n\n"
+        f"Suggest 3 broad evaluation metrics for responses to this prompt:\n\n"
+        f"{prompt_text}\n\n"
         f"Additional context: {additional_information or 'General evaluation'}"
     ).res_json()
 
-    return result.get("metrics", {
-        "How clear and well-structured is this?": "1-10",
-        "How interesting and well-written is this?": "1-10",
-        "How complete and thorough is this?": "1-10"
-    })
+    return result.get("metrics", dict(_DEFAULT_METRICS_ABSOLUTE))
 
 
 def _compare_pair(item_a, item_b, prompt_a, prompt_b, metric_question,

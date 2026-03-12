@@ -484,7 +484,28 @@ class LLM:
         return result
 
     run_json = run
-    result_json = rjson = res_json = run
+
+    def res_json(self, enforce=True, **kwargs) -> dict:
+        """
+        Run the prediction in JSON mode and return parsed JSON, without template interpolation.
+
+        Unlike run(), this does not treat {braces} in messages as template variables.
+        Use this when the chat history already contains the final prompt text.
+
+        Args:
+            enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
+            **kwargs: Overrides for run-specific settings.
+
+        Returns:
+            dict: The parsed JSON response.
+        """
+        saved_msgs = copy.deepcopy(self.chat_msgs)
+        self._run_prediction(jsn_mode=True, **kwargs)
+        result = self._parse_json(self.last(), enforce)
+        self.chat_msgs = saved_msgs
+        return result
+
+    result_json = rjson = res_json
 
     def _clone_for_batch(self) -> LLM:
         """Create an isolated LLM copy for batch execution (shares no mutable state)."""
@@ -518,7 +539,7 @@ class LLM:
         clone.auto_compact = self.auto_compact
         return clone
 
-    def run_batch(self, inputs, concurrency=3, return_errors=False, enforce=True) -> list[dict]:
+    def run_batch(self, inputs, concurrency=5, return_errors=False, enforce=True) -> list[dict]:
         """
         Run the LLM template across multiple inputs concurrently, returning parsed JSON.
 
@@ -564,6 +585,52 @@ class LLM:
 
     batch_run = run_batch
     batch_run_json = run_batch
+
+    def result_batch(self, prompts, concurrency=5, return_errors=False, **kwargs) -> list[str]:
+        """
+        Run a list of prompts concurrently, returning plain text responses.
+
+        Args:
+            prompts (list[str]): List of user prompts.
+            concurrency (int): Max parallel threads. Defaults to 3.
+            return_errors (bool): If True, failed calls return error string instead of raising.
+            **kwargs: Overrides passed to each prediction (model, temperature, etc.).
+
+        Returns:
+            list[str]: Responses in input order.
+        """
+        results = [None] * len(prompts)
+        if self.v:
+            print(f"result_batch: running {len(prompts)} prompts (concurrency={concurrency})")
+
+        def _exec(index, prompt):
+            clone = self._clone_for_batch()
+            try:
+                res = clone.user(prompt).result(**kwargs)
+                if self.v:
+                    print(f"  [{index+1}/{len(prompts)}] done")
+                return index, res, clone.costs
+            except Exception as e:
+                if self.v:
+                    print(f"  [{index+1}/{len(prompts)}] error: {e}")
+                if return_errors:
+                    return index, f"[error] {e}", []
+                raise
+
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(_exec, i, p): i for i, p in enumerate(prompts)}
+            for future in as_completed(futures):
+                idx, result, costs = future.result()
+                results[idx] = result
+                self.costs.extend(costs)
+
+        if self.v:
+            total = sum(c["total_cost"] for c in self.costs)
+            print(f"result_batch: {len(prompts)} calls, total cost: ${total:.6f}")
+
+        return results
+
+    r_batch = res_batch = result_batch
 
     def last_json(self, enforce=True) -> dict:
         """Parse the last assistant response as JSON, stripping markdown fences if present."""
