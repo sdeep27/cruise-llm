@@ -27,6 +27,11 @@
   "gpt-5-pro": "medium",
   "gpt-5-nano": "high",
   "o4-mini": "high",
-  "groq/openai/gpt-oss-120b": "high",
-  "groq/openai/gpt-oss-20b": "high"
+  "together_ai/openai/gpt-oss-120b": "high",
+  "together_ai/openai/gpt-oss-20b": "high",
+  "claude-sonnet-4-6": "default",
+  "gemini/gemini-3.1-pro-preview": "high",
+  "gemini/gemini-3.1-flash-lite-preview": "default",
+  "gpt-5.4": "xhigh",
+  "gpt-5.3-codex": "xhigh"
 }

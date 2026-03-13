@@ -881,7 +881,7 @@ class LLM:
         if self.reasoning_enabled:
             if 'grok' in model_lower and 'reasoning' in model_lower:
                 pass
-            elif model_lower.startswith('groq/'):
+            elif model_lower.startswith('together_ai/'):
                 pass
             elif self.reasoning_effort == 'default':
                 pass
@@ -891,9 +891,8 @@ class LLM:
             if "gemini-3" in self.model:
                 chat_args['reasoning_effort'] = "minimal"
         if self.search_enabled:
-            if model_lower.startswith('groq/'):
-                chat_args["tools"] = [{"type": "browser_search"}]
-                chat_args["tool_choice"] = "required"
+            if model_lower.startswith('together_ai/'):
+                pass
             else:
                 chat_args["web_search_options"] = {
                     "search_context_size": self.search_context_size
@@ -1034,13 +1033,12 @@ class LLM:
 
         Args:
             audio (str or list): Path(s) or URL(s) to audio file(s).
-            model (str, optional): Transcription model. Defaults to trying whisper-1,
-                then groq/whisper-large-v3-turbo.
+            model (str, optional): Transcription model. Defaults to whisper-1.
 
         Returns:
             str or list: Transcribed text. String for single file, list for multiple.
         """
-        models_to_try = [model] if model else ["whisper-1", "groq/whisper-large-v3-turbo", "groq/whisper-large-v3"]
+        models_to_try = [model] if model else ["whisper-1"]
         audios = [audio] if isinstance(audio, str) else audio
         results = []
         for aud in audios:

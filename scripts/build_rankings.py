@@ -156,7 +156,7 @@ def generate_candidates(aa_slug, available_set):
             if prefixed_dotted in available_set:
                 candidates.append(prefixed_dotted)
     if slug.startswith('gpt-oss'):
-        prefixed = f"groq/openai/{slug}"
+        prefixed = f"together_ai/openai/{slug}"
         if prefixed in available_set:
             candidates.append(prefixed)
 
@@ -166,7 +166,7 @@ def generate_candidates(aa_slug, available_set):
         candidates.append(dotted)
 
     # 4. Substring search: normalize slug, check if it appears inside any available model
-    # catches: llama-4-maverick -> groq/meta-llama/llama-4-maverick-17b-128e-instruct
+    # catches: llama-4-maverick -> together_ai/meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8
     normalized = slug.replace('-instruct', '').replace('-chat', '')
     for model in sorted(available_set):
         if normalized in model and model not in candidates:
@@ -298,7 +298,7 @@ def compute_optimal(best_list, fast_list, fast_weight=0.5, best_weight=0.5):
 # --- Open source detection ---
 
 OPEN_SOURCE_PATTERNS = [
-    'groq/',
+    'together_ai/',
     'llama', 'deepseek', 'qwen', 'mistral', 'kimi', 'gemma',
     'phi-', 'falcon', 'yi-', 'vicuna', 'wizardlm', 'openchat',
     'solar', 'internlm', 'codellama', 'starcoder', 'codestral',

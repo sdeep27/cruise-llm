@@ -95,7 +95,7 @@ def _resolve_transforms(transforms, n, prompt_model, v=False):
     return resolved
 
 
-def language_transform(prompt, language, output_language='english', translator_model='gemini/gemini-3-flash-preview', generator_model=1, v=False):
+def language_transform(prompt, language, output_language='english', translator_model='gemini/gemini-3-flash-preview', output_model=1, v=False):
     """
     Translate prompt to another language, generate a response, translate back.
 
@@ -104,7 +104,7 @@ def language_transform(prompt, language, output_language='english', translator_m
         language: Language to translate the prompt into.
         output_language: Language to translate the response back into.
         translator_model: Model for translation steps.
-        generator_model: Model for generating the response (passed to LLM).
+        output_model: Model for generating the response (passed to LLM).
         v: Verbose output - passed to LLM runs.
 
     Returns:
@@ -114,7 +114,7 @@ def language_transform(prompt, language, output_language='english', translator_m
     translator.v = v
 
     translated_prompt = translator.run(text=prompt, language=language, model=translator_model)["output"]
-    translated_response = LLM(model=generator_model, v=v).user(translated_prompt).result()
+    translated_response = LLM(model=output_model, v=v).user(translated_prompt).result()
     output_response = translator.run(text=translated_response, language=output_language, model=translator_model)["output"]
 
     return {
