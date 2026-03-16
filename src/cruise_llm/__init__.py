@@ -1,6 +1,6 @@
 from .LLM import LLM
 from .evaluate import pairwise_evaluate
-from .subprompt import subprompt
+from .prompt_space import subprompt, superprompt, sideprompt, prompt_tree
 from .prompt_probe import prompt_probe, language_transform
 from .compare_models import compare_models
 
@@ -83,4 +83,4 @@ def _dict_to_md(result, path):
     return paths
 
 
-__all__ = ["LLM", "pairwise_evaluate", "subprompt", "prompt_probe", "language_transform", "compare_models", "to_md"]
+__all__ = ["LLM", "pairwise_evaluate", "subprompt", "superprompt", "sideprompt", "prompt_tree", "prompt_probe", "language_transform", "compare_models", "to_md"]
