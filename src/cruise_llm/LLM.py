@@ -42,8 +42,8 @@ def _get_reasoning_effort(entry):
 def resolve_model(shorthand):
     """Resolve a shorthand (e.g. 'best1', 'open3', '1') to its full litellm model string.
 
-    Returns the model string if shorthand is a valid category/rank, or raises
-    ValueError with fuzzy suggestions if no match is found.
+    Returns the model string for valid category/rank shorthands.
+    For unrecognized strings, prints substring matches and fuzzy suggestions, returns None.
     """
     import re
     shorthand = str(shorthand)
@@ -52,7 +52,7 @@ def resolve_model(shorthand):
     if shorthand.isdigit():
         rank = int(shorthand)
         if rank < 1:
-            raise ValueError(f"Model rank must be >= 1, got {rank}")
+            return None
         optimal_entries = model_rankings.get('optimal', [])
         best_entries = model_rankings.get('best', [])
         zipped = []
@@ -62,7 +62,7 @@ def resolve_model(shorthand):
             if i < len(optimal_entries):
                 zipped.append(optimal_entries[i])
         if rank > len(zipped):
-            raise ValueError(f"Rank {rank} not available (max: {len(zipped)})")
+            return None
         return _get_model_name(zipped[rank - 1])
 
     match = re.match(r'^([a-z]+)(\d+)$', shorthand.lower())
@@ -71,7 +71,7 @@ def resolve_model(shorthand):
         if base_category in valid_categories:
             entries = model_rankings.get(base_category, [])
             if rank < 1 or rank - 1 >= len(entries):
-                raise ValueError(f"Rank {rank} not available for {base_category} (max: {len(entries)})")
+                return None
             return _get_model_name(entries[rank - 1])
 
     if shorthand.lower() in valid_categories:
@@ -79,10 +79,28 @@ def resolve_model(shorthand):
         if entries:
             return _get_model_name(entries[0])
 
-    all_models = list({_get_model_name(e) for cat in model_rankings.values() for e in cat})
-    suggestions = rapidfuzz.process.extract(shorthand, all_models, scorer=rapidfuzz.fuzz.WRatio, limit=3)
-    suggestion_strs = [f"  {name} (score: {score:.0f})" for name, score, _ in suggestions]
-    raise ValueError(f"'{shorthand}' is not a valid shorthand.\nDid you mean:\n" + "\n".join(suggestion_strs))
+    all_models = sorted({_get_model_name(e) for cat in model_rankings.values() for e in cat})
+    query = shorthand.lower()
+
+    # Substring matches
+    substr_matches = [m for m in all_models if query in m.lower()]
+    if substr_matches:
+        print(f"No exact shorthand '{shorthand}'. Substring matches:")
+        for m in substr_matches:
+            print(f"  {m}")
+
+    # Fuzzy matches (exclude already-shown substring matches)
+    substr_set = set(substr_matches)
+    fuzzy_pool = [m for m in all_models if m not in substr_set]
+    if fuzzy_pool:
+        fuzzy = rapidfuzz.process.extract(shorthand, fuzzy_pool, scorer=rapidfuzz.fuzz.WRatio, limit=5)
+        fuzzy_results = [name for name, score, _ in fuzzy if score > 50]
+        if fuzzy_results:
+            print(f"Fuzzy matches:")
+            for m in fuzzy_results:
+                print(f"  {m}")
+
+    return None
 
 load_dotenv()
 litellm.drop_params = True
@@ -694,6 +712,8 @@ class LLM:
 
     def _check_model(self, inputted_model):
         if not self.sub_closest_model:
+            return inputted_model
+        if inputted_model and inputted_model.startswith('together_ai/'):
             return inputted_model
         avail_models = self.get_models()
         if inputted_model in avail_models:

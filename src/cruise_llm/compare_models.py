@@ -99,7 +99,7 @@ def _top_search_models(n=5):
 _DEFAULT_MODELS = [1, 2, 3, 4, 5]
 
 
-def compare_models(prompt, models=None, metrics=None, evaluate=True, search=False, concurrency=5, v=True, **eval_kwargs):
+def compare_models(prompt, models=None, metrics=None, evaluate=True, search=False, save=None, concurrency=5, v=True, **eval_kwargs):
     """
     Compare a prompt across different models and rank the results.
 
@@ -115,6 +115,7 @@ def compare_models(prompt, models=None, metrics=None, evaluate=True, search=Fals
         evaluate (bool): If False, skip evaluation and return responses only.
         search (bool): Enable web search. When models are all shorthands, auto-selects
             search-capable models. When explicit models are given, validates search support.
+        save: Path to save responses as .md files with YAML frontmatter. None = don't save.
         concurrency (int): Max parallel model calls. Defaults to 5.
         v (bool): Verbose output. Defaults to True.
         **eval_kwargs: Additional kwargs passed to pairwise_evaluate.
@@ -182,10 +183,15 @@ def compare_models(prompt, models=None, metrics=None, evaluate=True, search=Fals
     model_labels = [_model_label(resolved[i], efforts[i]) for i in range(len(models))]
 
     if not evaluate:
-        return {
+        result = {
+            "prompt": prompt,
             "responses": results,
             "models": model_labels,
         }
+        if save:
+            from .utils import to_md
+            result["saved"] = to_md(result, save)
+        return result
 
     if v:
         print(f"\nEvaluating {len(results)} responses...")
@@ -207,7 +213,8 @@ def compare_models(prompt, models=None, metrics=None, evaluate=True, search=Fals
         for i in range(len(models))
     }
 
-    return {
+    result = {
+        "prompt": prompt,
         "top_output": results[best_idx],
         "top_model": model_labels[best_idx],
         "rankings": [model_labels[i] for i in rankings],
@@ -217,3 +224,9 @@ def compare_models(prompt, models=None, metrics=None, evaluate=True, search=Fals
         "configs": configs,
         "evaluation": evaluation,
     }
+
+    if save:
+        from .utils import to_md
+        result["saved"] = to_md(result, save)
+
+    return result

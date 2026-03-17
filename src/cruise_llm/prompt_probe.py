@@ -95,7 +95,7 @@ def _resolve_transforms(transforms, n, prompt_model, v=False):
     return resolved
 
 
-def language_transform(prompt, language, output_language='english', translator_model='gemini/gemini-3-flash-preview', output_model=1, v=False):
+def language_transform(prompt, language, output_language='english', translator_model='gemini/gemini-3-flash-preview', output_model=1, save=None, v=False):
     """
     Translate prompt to another language, generate a response, translate back.
 
@@ -105,10 +105,12 @@ def language_transform(prompt, language, output_language='english', translator_m
         output_language: Language to translate the response back into.
         translator_model: Model for translation steps.
         output_model: Model for generating the response (passed to LLM).
+        save: Path to save result as .md with YAML frontmatter. None = don't save.
         v: Verbose output - passed to LLM runs.
 
     Returns:
-        dict with keys: translated_prompt, translated_response, output_response
+        dict with keys: original_prompt, translated_prompt, translated_response, output_response, language
+        (plus 'saved' key if save is set)
     """
     translator = LLM.load_llm(os.path.join(_TRANSFORMS_DIR, "translator.json"))
     translator.v = v
@@ -117,14 +119,22 @@ def language_transform(prompt, language, output_language='english', translator_m
     translated_response = LLM(model=output_model, v=v).user(translated_prompt).result()
     output_response = translator.run(text=translated_response, language=output_language, model=translator_model)["output"]
 
-    return {
+    result = {
+        "original_prompt": prompt,
         "translated_prompt": translated_prompt,
         "translated_response": translated_response,
         "output_response": output_response,
+        "language": language,
     }
 
+    if save:
+        from .utils import to_md
+        result["saved"] = to_md(result, save)
 
-def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None, metrics=None, evaluate=True, concurrency=5, v=True):
+    return result
+
+
+def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None, metrics=None, evaluate=True, save=None, concurrency=5, v=True):
     """
     Probe for the best prompt variant by transforming, generating responses, and evaluating.
 
@@ -139,6 +149,7 @@ def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None
         prompt_model: Model override for LLM-based prompt transforms. None = use transform's saved config.
         metrics: Passed to pairwise_evaluate. None = auto-generate.
         evaluate: If False, skip pairwise evaluation and return responses only.
+        save: Path to save responses as .md files with YAML frontmatter. None = don't save.
         concurrency: Max parallel threads for transform + generation phases.
         v: Verbose output.
 
@@ -195,11 +206,15 @@ def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None
             all_responses[i] = postprocess_fn(response)
 
     if not evaluate:
-        return {
+        result = {
             "transforms": all_transforms,
             "prompts": all_prompts,
             "responses": all_responses,
         }
+        if save:
+            from .utils import to_md
+            result["saved"] = to_md(result, save)
+        return result
 
     # Phase 4: Evaluate
     if v:
@@ -215,7 +230,7 @@ def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None
     rankings = evaluation["rankings"]
     best_idx = rankings[0]
 
-    return {
+    result = {
         "top_output": all_responses[best_idx],
         "top_prompt": all_prompts[best_idx],
         "top_transform": all_transforms[best_idx],
@@ -227,3 +242,9 @@ def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None
         "scores": evaluation["scores"],
         "evaluation": evaluation,
     }
+
+    if save:
+        from .utils import to_md
+        result["saved"] = to_md(result, save)
+
+    return result
