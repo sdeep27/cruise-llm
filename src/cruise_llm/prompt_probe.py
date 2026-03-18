@@ -22,6 +22,7 @@ _LLM_TRANSFORMS = {
     "dimension_up": "dimension_up.json",
     "dimension_down": "dimension_down.json",
     "improve_naive": "improve_naive.json",
+    "user_profile": "user_profile.json",
 }
 
 _DETERMINISTIC_TRANSFORMS = {
@@ -54,11 +55,13 @@ def list_transforms(v=True):
     return list(transforms.keys())
 
 
-def _load_transform(name, prompt_model=None, v=False):
+def _load_transform(name, prompt_model=None, search=False, v=False):
     """Load a saved LLM transform by name, returning a callable (prompt) -> str."""
     path = os.path.join(_TRANSFORMS_DIR, _LLM_TRANSFORMS[name])
     llm = LLM.load_llm(path)
     llm.v = v
+    if search:
+        llm.search_enabled = True
     def transform(prompt):
         kwargs = {"prompt": prompt}
         if prompt_model is not None:
@@ -67,13 +70,15 @@ def _load_transform(name, prompt_model=None, v=False):
     return transform
 
 
-def _make_translator(language, prompt_model=None, v=False):
+def _make_translator(language, prompt_model=None, search=False, v=False):
     """Build a two-phase (mutate, postprocess) translator transform."""
     path = os.path.join(_TRANSFORMS_DIR, "translator.json")
 
     def mutate(prompt):
         llm = LLM.load_llm(path)
         llm.v = v
+        if search:
+            llm.search_enabled = True
         kwargs = {"text": prompt, "language": language}
         if prompt_model is not None:
             kwargs["model"] = prompt_model
@@ -90,7 +95,7 @@ def _make_translator(language, prompt_model=None, v=False):
     return (mutate, postprocess)
 
 
-def _resolve_transforms(transforms, n, prompt_model, v=False):
+def _resolve_transforms(transforms, n, prompt_model, search=False, v=False):
     """Resolve a list of transform specs into (name, callable_or_tuple) pairs."""
     if transforms is None:
         names = random.sample(_ALL_BUILTINS, min(n, len(_ALL_BUILTINS)))
@@ -102,12 +107,12 @@ def _resolve_transforms(transforms, n, prompt_model, v=False):
             resolved.append((repr(t), t))
         elif isinstance(t, str):
             if t in _LLM_TRANSFORMS:
-                resolved.append((t, _load_transform(t, prompt_model, v=v)))
+                resolved.append((t, _load_transform(t, prompt_model, search=search, v=v)))
             elif t in _DETERMINISTIC_TRANSFORMS:
                 resolved.append((t, _DETERMINISTIC_TRANSFORMS[t]))
             elif t.startswith("translate_"):
                 language = t[len("translate_"):]
-                resolved.append((t, _make_translator(language, prompt_model, v=v)))
+                resolved.append((t, _make_translator(language, prompt_model, search=search, v=v)))
             else:
                 raise ValueError(f"Unknown transform: '{t}'. Available: {_ALL_BUILTINS}")
         else:
@@ -116,23 +121,23 @@ def _resolve_transforms(transforms, n, prompt_model, v=False):
     return resolved
 
 
-def prompt_transform(prompt, transform, model=None, v=False):
+def prompt_transform(prompt, transform, model=None, search=False, v=False):
     """Apply a single prompt transform and return the transformed prompt string."""
     if callable(transform):
         return transform(prompt)
     if transform in _LLM_TRANSFORMS:
-        fn = _load_transform(transform, prompt_model=model, v=v)
+        fn = _load_transform(transform, prompt_model=model, search=search, v=v)
         return fn(prompt)
     if transform in _DETERMINISTIC_TRANSFORMS:
         return _DETERMINISTIC_TRANSFORMS[transform](prompt)
     if transform.startswith("translate_"):
         language = transform[len("translate_"):]
-        mutate, _ = _make_translator(language, prompt_model=model, v=v)
+        mutate, _ = _make_translator(language, prompt_model=model, search=search, v=v)
         return mutate(prompt)
     raise ValueError(f"Unknown transform: '{transform}'. Available: {_ALL_BUILTINS}")
 
 
-def language_transform(prompt, language, output_language='english', translator_model='gemini/gemini-3-flash-preview', output_model=1, save=None, v=False):
+def language_transform(prompt, language, output_language='english', translator_model='gemini/gemini-3-flash-preview', output_model=1, search=False, save=None, v=False):
     """
     Translate prompt to another language, generate a response, translate back.
 
@@ -142,6 +147,7 @@ def language_transform(prompt, language, output_language='english', translator_m
         output_language: Language to translate the response back into.
         translator_model: Model for translation steps.
         output_model: Model for generating the response (passed to LLM).
+        search (bool): Enable web search for the response generation step.
         save: Path to save result as .md with YAML frontmatter. None = don't save.
         v: Verbose output - passed to LLM runs.
 
@@ -153,7 +159,7 @@ def language_transform(prompt, language, output_language='english', translator_m
     translator.v = v
 
     translated_prompt = translator.run(text=prompt, language=language, model=translator_model)["output"]
-    translated_response = LLM(model=output_model, v=v).user(translated_prompt).result()
+    translated_response = LLM(model=output_model, search=search, v=v).user(translated_prompt).result()
     output_response = translator.run(text=translated_response, language=output_language, model=translator_model)["output"]
 
     result = {
@@ -171,7 +177,7 @@ def language_transform(prompt, language, output_language='english', translator_m
     return result
 
 
-def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None, metrics=None, evaluate=True, save=None, concurrency=5, v=True):
+def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None, search=False, search_prompts=False, metrics=None, evaluate=True, save=None, concurrency=5, v=True):
     """
     Probe for the best prompt variant by transforming, generating responses, and evaluating.
 
@@ -184,6 +190,8 @@ def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None
         n: How many random built-in transforms to pick when transforms is None.
         output_model: Model for generating final responses (passed to LLM(model=...)).
         prompt_model: Model override for LLM-based prompt transforms. None = use transform's saved config.
+        search (bool): Enable web search for response generation (output step).
+        search_prompts (bool): Enable web search for LLM-based prompt transforms.
         metrics: Passed to pairwise_evaluate. None = auto-generate.
         evaluate: If False, skip pairwise evaluation and return responses only.
         save: Path to save responses as .md files with YAML frontmatter. None = don't save.
@@ -194,7 +202,7 @@ def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None
         dict with keys: top_output, top_prompt, top_transform, transforms, prompts, responses,
         rankings_output, rankings_transforms, scores, evaluation
     """
-    resolved = _resolve_transforms(transforms, n, prompt_model, v=v)
+    resolved = _resolve_transforms(transforms, n, prompt_model, search=search_prompts, v=v)
 
     if v:
         names = [name for name, _ in resolved]
@@ -232,7 +240,7 @@ def prompt_probe(prompt, transforms=None, n=6, output_model=1, prompt_model=None
         print(f"\nGenerating {len(all_prompts)} responses with model={output_model}...")
 
     # Phase 2: Generate responses
-    llm = LLM(model=output_model, v=False)
+    llm = LLM(model=output_model, search=search, v=False)
     all_responses = llm.result_batch(all_prompts, concurrency=concurrency)
 
     # Phase 3: Apply postprocessors (translations only)

@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .LLM import LLM
-from .compare_models import validate_model, parse_model_string, _model_label, _DEFAULT_MODELS
+from .compare_models import validate_model, parse_model_string, _model_label, _DEFAULT_MODELS, _is_shorthand, _has_search, _top_search_models
 from .prompt_probe import _resolve_transforms
 from .evaluate import pairwise_evaluate
 
@@ -18,6 +18,8 @@ def grid_search(
     metrics=None,
     evaluate=True,
     prompt_model=None,
+    search=False,
+    search_prompts=False,
     save=None,
     concurrency=5,
     v=True,
@@ -38,6 +40,10 @@ def grid_search(
         metrics: Evaluation metrics for pairwise_evaluate. None = auto-generate.
         evaluate: If False, skip evaluation and return the grid only.
         prompt_model: Model override for LLM-based prompt transforms.
+        search (bool): Enable web search for response generation (output step).
+            When models are all shorthands, auto-selects search-capable models.
+            When explicit models are given, validates search support.
+        search_prompts (bool): Enable web search for LLM-based prompt transforms.
         save: Path to save responses as .md files. None = don't save.
         concurrency: Max parallel threads. Defaults to 5.
         v: Verbose output.
@@ -50,6 +56,12 @@ def grid_search(
     n_transforms = n_transforms or _DEFAULT_N_TRANSFORMS
     models = models or _DEFAULT_MODELS[:_DEFAULT_N_MODELS]
 
+    all_shorthands = all(_is_shorthand(parse_model_string(m)[0]) for m in models)
+    if search and all_shorthands:
+        models = _top_search_models(len(models))
+        if v:
+            print(f"Auto-selected search models: {models}")
+
     # Resolve models
     parsed = [parse_model_string(m) for m in models]
     resolved_models = []
@@ -58,10 +70,21 @@ def grid_search(
         resolved_models.append(validate_model(model_id))
         efforts.append(effort)
 
+    if search and not all_shorthands:
+        no_search = [name for name in resolved_models if not _has_search(name)]
+        if no_search:
+            suggestions = _top_search_models()
+            raise ValueError(
+                "These models do not support search:\n"
+                + "".join(f"  - {name}\n" for name in no_search)
+                + "Models with search support:\n"
+                + "".join(f"  - {name}\n" for name in suggestions)
+            )
+
     model_labels = [_model_label(resolved_models[i], efforts[i]) for i in range(len(models))]
 
     # Resolve transforms (includes "original" prepended after)
-    resolved_transforms = _resolve_transforms(transforms, n_transforms, prompt_model, v=v)
+    resolved_transforms = _resolve_transforms(transforms, n_transforms, prompt_model, search=search_prompts, v=v)
     transform_names = [name for name, _ in resolved_transforms]
 
     if v:
@@ -114,6 +137,8 @@ def grid_search(
         if efforts[m_idx]:
             kwargs["reasoning"] = True
             kwargs["reasoning_effort"] = efforts[m_idx]
+        if search:
+            kwargs["search"] = True
         llm = LLM(**kwargs)
         return cell_idx, llm.user(all_prompts[t_idx]).res()
 

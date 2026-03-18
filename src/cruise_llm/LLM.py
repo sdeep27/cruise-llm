@@ -102,6 +102,36 @@ def resolve_model(shorthand):
 
     return None
 
+def get_model_rankings(category=None):
+    """Show ranked models. Without args, shows all categories. With a category string, shows that category's models."""
+    categories = ['best', 'optimal', 'fast', 'cheap', 'open', 'codex']
+    if category:
+        category = category.lower()
+        entries = model_rankings.get(category, [])
+        if not entries:
+            print(f"Unknown category '{category}'. Available: {', '.join(categories)}")
+            return []
+        models = [_get_model_name(e) for e in entries]
+        print(f"{category}:")
+        for i, m in enumerate(models, 1):
+            effort = _get_reasoning_effort(entries[i-1])
+            suffix = f"  (reasoning: {effort})" if effort and effort != 'default' else ""
+            print(f"  {i}. {m}{suffix}")
+        return models
+
+    result = {}
+    for cat in categories:
+        entries = model_rankings.get(cat, [])
+        models = [_get_model_name(e) for e in entries]
+        result[cat] = models
+        print(f"{cat}:")
+        for i, m in enumerate(models, 1):
+            effort = _get_reasoning_effort(entries[i-1])
+            suffix = f"  (reasoning: {effort})" if effort and effort != 'default' else ""
+            print(f"  {i}. {m}{suffix}")
+        print()
+    return result
+
 load_dotenv()
 litellm.drop_params = True
 
@@ -878,7 +908,8 @@ class LLM:
         resp_args = {
             "model": args['model'],
             "input": input_messages,
-            "tools": [{"type": "web_search"}],
+            "tools": [{"type": "web_search", "search_context_size": self.search_context_size}],
+            "tool_choice": "required",
         }
         if args['temperature'] is not None:
             resp_args["temperature"] = args['temperature']
@@ -1041,12 +1072,15 @@ class LLM:
                 "content": str(result),
             })
    
+    _SERVER_HANDLED_TOOLS = frozenset(('web_search',))
+
     def _requests_tool(self, asst_msg):
         if asst_msg.tool_calls:
-            if self.v: print('Received Tool Call Request.\n')
-            return True
-        else:
-            return False
+            has_user_tools = any(tc.function.name not in self._SERVER_HANDLED_TOOLS for tc in asst_msg.tool_calls)
+            if has_user_tools:
+                if self.v: print('Received Tool Call Request.\n')
+                return True
+        return False
     def _requests_tool_streaming(self):
         "Currently tool calls are not supported for streaming responses. To be added."
         pass

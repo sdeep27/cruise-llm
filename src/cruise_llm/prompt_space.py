@@ -108,7 +108,7 @@ _SIBLING_SYSTEM = (
 )
 
 
-def superprompt(prompt, n=[3], model=1, concurrency=5, v=True):
+def superprompt(prompt, n=[3], model=1, search=False, concurrency=5, v=True):
     """
     Iteratively generate parent/super prompts — prompts one level up in abstraction.
 
@@ -121,6 +121,7 @@ def superprompt(prompt, n=[3], model=1, concurrency=5, v=True):
             int treated as [int]. e.g. [3, 2] = level 0 generates 3, level 1
             generates 2 per each of those 3 (6 total).
         model: Model identifier passed to LLM(). Defaults to 1.
+        search (bool): Enable web search for grounded generation.
         concurrency (int): Max parallel API calls per level. Defaults to 5.
 
     Returns:
@@ -135,7 +136,7 @@ def superprompt(prompt, n=[3], model=1, concurrency=5, v=True):
     current = [{"prompt": prompt, "depth": -1, "parent": None}]
 
     for depth, num_splits in enumerate(n):
-        llm = LLM(model=model, v=False).sys(_SUPERPROMPT_SYSTEM).user("{prompt}\n\nn={n}")
+        llm = LLM(model=model, search=search, v=False).sys(_SUPERPROMPT_SYSTEM).user("{prompt}\n\nn={n}")
 
         if v:
             print(f"[Level {depth}] Generating {num_splits} superprompt(s) for {len(current)} prompt(s):")
@@ -160,7 +161,7 @@ def superprompt(prompt, n=[3], model=1, concurrency=5, v=True):
     return current
 
 
-def sideprompt(prompt, n=[4], model=1, concurrency=5, v=True):
+def sideprompt(prompt, n=[4], model=1, search=False, concurrency=5, v=True):
     """
     Iteratively generate side prompts — prompts at the same abstraction level
     exploring different perspectives.
@@ -174,6 +175,7 @@ def sideprompt(prompt, n=[4], model=1, concurrency=5, v=True):
             int treated as [int]. e.g. [4, 3] = level 0 generates 4 side prompts,
             level 1 generates 3 per each of those 4 (12 total).
         model: Model identifier passed to LLM(). Defaults to 1.
+        search (bool): Enable web search for grounded generation.
         concurrency (int): Max parallel API calls per level. Defaults to 5.
 
     Returns:
@@ -188,7 +190,7 @@ def sideprompt(prompt, n=[4], model=1, concurrency=5, v=True):
     current = [{"prompt": prompt, "depth": -1, "parent": None}]
 
     for depth, num_splits in enumerate(n):
-        llm = LLM(model=model, v=False).sys(_SIBLING_SYSTEM).user(
+        llm = LLM(model=model, search=search, v=False).sys(_SIBLING_SYSTEM).user(
             "Original Prompt: {prompt}\n\nGenerate exactly {n} sibling prompts."
         )
 
@@ -217,7 +219,7 @@ def sideprompt(prompt, n=[4], model=1, concurrency=5, v=True):
 
 # --- prompt_tree internals ---
 
-def _run_expansion(prompt, n, direction, model, concurrency, v):
+def _run_expansion(prompt, n, direction, model, search, concurrency, v):
     """Run one direction of expansion, returning (final_level, all_nodes, all_edges)."""
     if isinstance(n, int):
         n = [n]
@@ -237,15 +239,15 @@ def _run_expansion(prompt, n, direction, model, concurrency, v):
                 f"are addressed together, they should fully satisfy the original prompt.\n\n"
                 f'Return JSON with key "subprompts": an array of exactly {num_splits} strings.'
             )
-            llm = LLM(model=model, v=False).sys(sys_prompt).user("Prompt = {prompt}")
+            llm = LLM(model=model, search=search, v=False).sys(sys_prompt).user("Prompt = {prompt}")
             inputs = [{"prompt": e["prompt"]} for e in current]
             output_key = "subprompts"
         elif direction == "super":
-            llm = LLM(model=model, v=False).sys(_SUPERPROMPT_SYSTEM).user("{prompt}\n\nn={n}")
+            llm = LLM(model=model, search=search, v=False).sys(_SUPERPROMPT_SYSTEM).user("{prompt}\n\nn={n}")
             inputs = [{"prompt": e["prompt"], "n": num_splits} for e in current]
             output_key = "superprompts"
         elif direction == "side":
-            llm = LLM(model=model, v=False).sys(_SIBLING_SYSTEM).user(
+            llm = LLM(model=model, search=search, v=False).sys(_SIBLING_SYSTEM).user(
                 "Original Prompt: {prompt}\n\nGenerate exactly {n} sibling prompts."
             )
             inputs = [{"prompt": e["prompt"], "n": num_splits} for e in current]
@@ -360,7 +362,7 @@ def _build_graph(root_prompt, all_nodes, all_edges):
 
 def prompt_tree(prompt, sub=None, super=None, side=None, model=1,
                 sub_model=None, super_model=None, side_model=None,
-                concurrency=5, v=True, viz=True):
+                search=False, concurrency=5, v=True, viz=True):
     """
     Fan out a prompt in all three directions and visualize the tree.
 
@@ -376,6 +378,7 @@ def prompt_tree(prompt, sub=None, super=None, side=None, model=1,
         sub_model: Override model for sub direction.
         super_model: Override model for super direction.
         side_model: Override model for side direction.
+        search (bool): Enable web search for grounded prompt generation.
         concurrency: Max parallel API calls per expansion level.
         v: Verbose output.
         viz: Generate graphviz visualization.
@@ -404,7 +407,7 @@ def prompt_tree(prompt, sub=None, super=None, side=None, model=1,
 
     with ThreadPoolExecutor(max_workers=len(directions)) as executor:
         futures = {
-            executor.submit(_run_expansion, prompt, n, direction, m, concurrency, v): direction
+            executor.submit(_run_expansion, prompt, n, direction, m, search, concurrency, v): direction
             for direction, n, m in directions
         }
         for future in as_completed(futures):
