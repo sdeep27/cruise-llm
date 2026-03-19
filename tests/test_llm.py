@@ -1,5 +1,5 @@
 """
-Tests for cruise_llm LLM class.
+Tests for spaceshift LLM class.
 Extracted from test_notebook.ipynb
 """
 import os
@@ -12,7 +12,7 @@ import pytest
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(TEST_DIR, '../src'))
 
-from cruise_llm import LLM
+from spaceshift import LLM
 
 
 class TestImportAndInit:

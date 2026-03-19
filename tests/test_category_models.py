@@ -2,7 +2,7 @@
 import sys
 sys.path.insert(0, '../src')
 
-from cruise_llm import LLM
+from spaceshift import LLM
 
 def test_category_selection():
     """Test that category selection works correctly."""

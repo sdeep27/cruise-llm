@@ -1,6 +1,6 @@
 # Changelog
 
-**cruise-llm** is a lightweight Python library for working with LLMs. A simple, chainable interface for building AI workflows.
+**spaceshift** is an open research toolkit powered by LLMs. Branch into questions through tree structures, navigate the full space of perspectives, and grid-search evaluate across prompts and models to find what works best.
 
 ---
 

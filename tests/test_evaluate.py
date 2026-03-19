@@ -1,7 +1,7 @@
 # tests/test_evaluate.py
 
 import pytest
-from cruise_llm import LLM, pairwise_evaluate
+from spaceshift import LLM, pairwise_evaluate
 
 
 class TestEvaluateWithRealLLMOutputs:

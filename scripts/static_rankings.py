@@ -1,6 +1,6 @@
 import json
 from dotenv import load_dotenv
-from cruise_llm import LLM
+from spaceshift import LLM
 import datetime
 import os
 
@@ -20,7 +20,7 @@ for key, rankings in litellm_rankings.items():
                 model_rankings[key].append(full_model_name)   
 today_str = datetime.datetime.now().strftime('%Y-%m-%d')
 
-filename = f"src/cruise_llm/rankings/static_rankings_{today_str}.json"
+filename = f"src/spaceshift/rankings/static_rankings_{today_str}.json"
 if os.path.exists(filename):
     response = input(f"{filename} already exists. Overwrite? (y/N): ").strip().lower()
     if response != "y":

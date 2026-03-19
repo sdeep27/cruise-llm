@@ -108,7 +108,7 @@ def compare_models(prompt, models=None, metrics=None, evaluate=True, search=Fals
 
     Args:
         prompt (str): The prompt to test across models.
-        models: List of model identifiers. Supports cruise-llm shorthands (1, 'best1', 'fast2'),
+        models: List of model identifiers. Supports spaceshift shorthands (1, 'best1', 'fast2'),
             litellm model names ('claude-opus-4-6'), and inline reasoning effort via
             parentheses ('gpt-5.4(xhigh)', 'claude-opus-4-6 (low)'). Defaults to [1,2,3,4,5].
         metrics: Evaluation metrics passed to pairwise_evaluate. None = auto-generate.

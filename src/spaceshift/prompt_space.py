@@ -442,15 +442,29 @@ def prompt_tree(prompt, sub_n=None, super_n=None, side_n=None, model=1,
     return result
 
 
-def prompt_research(
+def _prompt_to_dirname(prompt, max_len=60):
+    """Sanitize a prompt string into a filesystem-safe directory name."""
+    import re
+    slug = prompt.strip()[:max_len].lower()
+    slug = re.sub(r'[^\w\s-]', '', slug)
+    slug = re.sub(r'[\s_]+', '_', slug).strip('_')
+    return slug or "research"
+
+
+_DEFAULT_SUB_N = [5, 3]
+_DEFAULT_SUPER_N = [5]
+_DEFAULT_SIDE_N = [3]
+
+
+def research_tree(
     prompt,
-    sub_n=None, super_n=None, side_n=None,
+    sub_n=_DEFAULT_SUB_N, super_n=_DEFAULT_SUPER_N, side_n=_DEFAULT_SIDE_N,
     prompt_model=1,
     sub_model=None, super_model=None, side_model=None,
     output_model=None,
     sub_output_model=None, super_output_model=None, side_output_model=None,
     search=False, search_tree=False,
-    save=None,
+    save=True,
     concurrency=5,
     v=True,
 ):
@@ -463,9 +477,9 @@ def prompt_research(
 
     Args:
         prompt: A prompt string, or an existing prompt_tree result dict.
-        sub_n: n array for subprompts (e.g. [5, 3]). None to skip.
-        super_n: n array for superprompts. None to skip.
-        side_n: n array for sideprompts. None to skip.
+        sub_n: n array for subprompts. Defaults to [5, 3]. None to skip.
+        super_n: n array for superprompts. Defaults to [5]. None to skip.
+        side_n: n array for sideprompts. Defaults to [3]. None to skip.
         prompt_model: Default model for tree building. Defaults to 1.
         sub_model: Override tree-building model for sub direction.
         super_model: Override tree-building model for super direction.
@@ -476,7 +490,7 @@ def prompt_research(
         side_output_model: Override output model for side nodes.
         search (bool): Enable web search for response generation.
         search_tree (bool): Enable web search for tree building.
-        save: Directory path to save outputs. None = don't save.
+        save: Directory path to save outputs, or True to auto-name from prompt. False/None = don't save.
         concurrency: Max parallel API calls. Defaults to 5.
         v: Verbose output.
 
@@ -496,6 +510,10 @@ def prompt_research(
             model=prompt_model, sub_model=sub_model, super_model=super_model, side_model=side_model,
             search=search_tree, concurrency=concurrency, v=v, viz=True,
         )
+
+    # Resolve save path
+    if save is True:
+        save = _prompt_to_dirname(prompt)
 
     output_model = output_model or prompt_model
 

@@ -2,7 +2,7 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from cruise_llm import LLM
+from spaceshift import LLM
 from dotenv import load_dotenv
 load_dotenv()
 

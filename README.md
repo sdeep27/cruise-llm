@@ -1,307 +1,294 @@
-# cruise-llm
+# spaceshift
 
-Quickly build and reuse LLM workflows/agents with a clean, composable API — inspired by [scikit-learn](https://github.com/scikit-learn/scikit-learn)'s chainability and [litellm](https://github.com/BerriAI/litellm)'s model flexibility.
+An open research toolkit powered by LLMs. Branch into questions through tree structures, navigate the full space of perspectives, and grid-search evaluate across prompts and models to find what works best.
 
 ```python
-from cruise_llm import LLM
-LLM().user("Explain quantum computing").chat(stream=True)
+from spaceshift import research_tree
+
+# Decompose a topic and generate responses for every angle
+result = research_tree("What are the second-order effects of AI on labor markets?")
+# Saves markdown files + tree visualization for every sub/super/side angle
 ```
 
 ---
 
-### LLM as Function
+### Research Tree
 
-Define reusable LLM functions with `{placeholders}`, call with `.run()`. Each call is isolated — history resets automatically. Dict in, dict out.
+Decompose a question, explore it from every direction, and generate responses for every node. Saves structured markdown with YAML frontmatter and a graphviz tree visualization.
 
 ```python
-# Define with {placeholders}, call with .run() — always returns a dict
+from spaceshift import research_tree
+
+result = research_tree(
+    "How do general-purpose technologies reshape economic structures?",
+    sub_n=[5, 3],      # 5 subtopics, each split into 3 more
+    super_n=[5],        # 5 broader framings
+    side_n=[3],         # 3 lateral perspectives
+    search=True,        # web search for current information
+)
+
+print(result["root_output"])       # Response to the original question
+print(len(result["outputs"]))     # Responses for every node in the tree
+# All saved to markdown files with metadata + tree.svg visualization
+```
+
+---
+
+### Directional Prompt Exploration
+
+Most prompt decomposition only goes downward — breaking big into small. spaceshift moves in three directions:
+
+```python
+from spaceshift import subprompt, superprompt, sideprompt, prompt_tree
+
+# Down — decompose into focused subtopics
+subs = subprompt("What are the effects of AI on labor markets?", n=[5])
+
+# Up — discover the bigger question this is a piece of
+supers = superprompt("What are the effects of AI on labor markets?", n=[3])
+# e.g. "How do general-purpose technologies reshape economic structures?"
+
+# Sideways — explore sibling questions at the same abstraction level
+sides = sideprompt("What are the effects of AI on labor markets?", n=[4])
+# e.g. "What are the effects of AI on education systems?"
+
+# All three at once, with tree visualization
+tree = prompt_tree(
+    "What are the effects of AI on labor markets?",
+    sub_n=[5], super_n=[3], side_n=[4],
+    viz=True,
+)
+tree["graph"].render("exploration_tree", cleanup=True)  # saves SVG
+```
+
+---
+
+### Language Transform
+
+Route a question through another language to sample different reasoning. Not a translation utility — an exploration axis.
+
+```python
+from spaceshift import language_transform
+
+# Think about the question in Korean, get the answer back in English
+result = language_transform(
+    "What is the role of honor in modern society?",
+    language="korean",
+    save="honor_korean.md",
+)
+
+print(result["translated_prompt"])     # The question in Korean
+print(result["translated_response"])   # Response generated in Korean
+print(result["output_response"])       # That response translated back to English
+```
+
+Built-in languages: Chinese, Korean, Hindi, French, Arabic — or pass any language string.
+
+---
+
+### Compare Models
+
+Run the same question across multiple models, auto-evaluate and rank the responses.
+
+```python
+from spaceshift import compare_models
+
+result = compare_models(
+    "Explain why the sky is blue",
+    models=[1, 2, 3, 4, 5],               # top 5 ranked models
+    save="sky_comparison",                  # saves ranked markdown files
+)
+
+print(result["top_model"])                 # which model won
+print(result["rankings"])                  # full ranking
+print(result["scores"])                    # normalized scores
+```
+
+Supports shorthand selection (`1`, `"best"`, `"fast3"`), explicit model names (`"claude-opus-4-6"`), and inline reasoning effort (`"gpt-5.4(xhigh)"`).
+
+---
+
+### Grid Search
+
+Search across models and prompt transforms simultaneously. Find the best combination.
+
+```python
+from spaceshift import grid_search
+
+# 4 transforms x 4 models = 16 cells + 4 original = 20 total, all evaluated
+result = grid_search(
+    "Explain quantum entanglement",
+    models=[1, 2, 3, 4],
+    n_transforms=4,                        # auto-select 4 random transforms
+    save="quantum_grid",
+)
+
+print(result["top_output"])                # best response across entire grid
+print(result["top_model"])                 # which model won
+print(result["top_transform"])             # which transform won
+print(result["grid"][:3])                  # top 3 cells with scores
+```
+
+---
+
+### Prompt Probe
+
+Sample the output space by applying transforms to your question, generating responses for each variant, and evaluating to find the best one.
+
+```python
+from spaceshift import prompt_probe
+
+result = prompt_probe(
+    "Explain why the sky is blue",
+    n=6,                                   # try 6 random transforms
+    save="sky_probe",
+)
+
+print(result["top_output"])                # best response found
+print(result["top_transform"])             # which transform produced it
+print(result["rankings_transforms"])       # full ranking of transforms
+```
+
+---
+
+### Pairwise Evaluate
+
+Rank any set of LLM outputs. Uses position-swap bias mitigation, auto-generated metrics, and Bradley-Terry sampling for large sets.
+
+```python
+from spaceshift import LLM, pairwise_evaluate
+
+# Generate responses however you want, then evaluate
+responses = [LLM(model=m).user("Explain dark matter").res() for m in [1, 2, 3]]
+
+result = pairwise_evaluate(
+    results=responses,
+    metrics=["How accessible is this for a general audience?"],
+)
+
+print(result["rankings"])                  # [2, 0, 1] = third response was best
+print(result["scores"])                    # normalized scores per response
+```
+
+Score a single response:
+
+```python
+llm = LLM().user("Write a haiku about recursion").chat()
+score = llm.evaluate_last(
+    metrics={"How well does this follow 5-7-5 structure?": "1-10"}
+)
+print(score["score"])                      # 0.0 - 1.0
+```
+
+---
+
+### Prompt Transforms
+
+20+ built-in transforms that reframe questions in different ways. Used internally by prompt_probe and grid_search, but available directly.
+
+```python
+from spaceshift import prompt_transform, list_transforms
+
+list_transforms()                          # see all available transforms
+
+# Apply a single transform
+result = prompt_transform("Explain gravity", "abstract_up")
+# e.g. "Explain fundamental forces in physics"
+
+result = prompt_transform("Explain gravity", "inverse")
+# e.g. "What would a universe without gravity look like?"
+```
+
+Available transforms include abstraction shifts, perspective changes, dimensional manipulation, language translations, and more.
+
+---
+
+### Everything Saves to Markdown
+
+Every tool supports `save=` to write structured markdown with YAML frontmatter. Outputs are ranked, labeled, and organized for comparison.
+
+```python
+# Compare models — saves ranked files: 1_claude-opus-4-6.md, 2_gpt-5.2.md, ...
+compare_models("Explain dark matter", save="dark_matter")
+
+# Research tree — saves per-node files + tree.svg visualization
+research_tree("Effects of AI on education", save="ai_education")
+
+# Grid search — saves per-cell files with transform + model in filename
+grid_search("Explain gravity", save="gravity_grid")
+```
+
+---
+
+### The LLM Interface
+
+Everything above is built on a clean, composable LLM class. One class, all providers via [litellm](https://github.com/BerriAI/litellm).
+
+```python
+from spaceshift import LLM
+
+# Basic usage
+LLM().user("Explain quantum computing").chat(stream=True)
+
+# LLM as function — define with {placeholders}, returns parsed JSON
 sentiment = LLM().sys("Classify sentiment. Return JSON with key 'sentiment'.").user("{text}")
 sentiment.run("I love this product!")    # {"sentiment": "positive"}
 sentiment.run(text="This is terrible")   # {"sentiment": "negative"}
 
-# Optional variables with {var?} syntax
-analyzer = LLM().sys("Analyze stock. Return JSON with key 'analysis'.").user("Analyze {ticker} focusing on {aspect?}")
-analyzer.run(ticker="TSLA")                        # aspect becomes ""
-analyzer.run(ticker="TSLA", aspect="growth")       # aspect = "growth"
-
-# Extract structured data
-extractor = LLM().sys("Extract entities. Return JSON with key 'entities'.").user("{text}")
-extractor.run("Apple announced new MacBooks")  # {"entities": ["Apple", "MacBooks"]}
-```
-
----
-
-### Batch Processing
-
-Run the same template across many inputs concurrently with `run_batch()`:
-
-```python
-classifier = LLM().sys("Classify sentiment. Return JSON with key 'sentiment'.").user("{text}")
-results = classifier.run_batch(
-    [{"text": "Love it!"}, {"text": "Terrible experience"}, {"text": "It's okay"}],
+# Batch processing
+results = sentiment.run_batch(
+    [{"text": "Love it!"}, {"text": "Terrible"}, {"text": "It's okay"}],
     concurrency=10,
 )
-# results: [{"sentiment": "positive"}, {"sentiment": "negative"}, {"sentiment": "neutral"}]
 
-extractor = LLM().sys("Extract entities. Return JSON with key 'entities'.").user("{text}")
-entities = extractor.run_batch(
-    [{"text": "Apple launched iPhone"}, {"text": "Google acquired DeepMind"}]
-)
-# entities: [{"entities": ["Apple", "iPhone"]}, {"entities": ["Google", "DeepMind"]}]
+# Model selection
+LLM(model="gpt-5.2")
+LLM(model="best")       # top intelligence rankings
+LLM(model="fast")       # optimized for speed
+LLM(model="cheap")
+LLM(model="open")       # open-source models
+LLM(model=1)            # top overall (default)
 
-# Graceful error handling for production workloads
-results = classifier.run_batch(inputs, return_errors=True)
-# Failed calls return {"error": "...", "input": {...}} instead of raising
-```
-
----
-
-### Multi-turn Prompt Queues
-
-Build complex micro-workflows by queuing prompts that the model will execute sequentially.
-
-```python
-# Automatic multi-step processing
-news_processor = (
-    LLM(model="fast")
-    .user(f"Process this article: {raw_text}")
-    .queue("Summarize the key points into 3 bullet points for an executive.")
-    .queue("Translate those points into Spanish.")
-    .queue("Format the Spanish summary as a Slack message with emojis.")
-    .chat()
-)
-
-# Create reusable bot templates
-def style_refiner(style):
-    return LLM().sys(f"Rewrite in a {style} tone").queue("Make it half the length")
-
-casual = style_refiner("casual")
-formal = style_refiner("formal")
-
-casual.user("We need to discuss Q3 deliverables").res()
-formal.user("hey wanna grab coffee and chat about the project?").res()
-```
-
----
-
-### Easy Tool Calling for Fast Agent Building
-
-Simply define functions, no schema necessary:
-
-```python
-def search_docs(query: str):
-    """Search internal documentation."""
-    return f"Found: '{query}' appears in onboarding.md and api-reference.md"
-
-def create_ticket(title: str, priority: str):
-    """Create a support ticket."""
-    return f"Created ticket #{hash(title) % 1000}: {title} [{priority}]"
-
-def send_slack(channel: str, message: str):
-    """Send a Slack message."""
-    return f"Sent to #{channel}: {message[:50]}..."
-
-support_agent = (
-    LLM()
-    .sys("You are a support agent")
-    .tools(fns=[search_docs, create_ticket, send_slack])
-)
-
-support_agent.user("User can't log in. Check docs, create a P1 ticket, and alert #incidents").chat()
-```
-
----
-
-### Image & Audio Support
-
-Attach images and audio to prompts — auto-switches to a capable model if needed:
-
-```python
-# Images
-LLM().user("What's in this image?", image="photo.jpg").chat()
-LLM().user("Compare these", image=["before.png", "after.png"]).chat()
-
-# Audio
-LLM().user(audio="meeting.mp3").chat()                          # audio as the prompt
-LLM().user("What language is this?", audio="clip.wav").chat()    # audio + text
-LLM().user("Compare these", audio=["clip1.wav", "clip2.wav"]).chat()
-
-# Combined
-LLM().user("Describe the scene", image="photo.jpg", audio="narration.mp3").chat()
-
-# URLs work for both
-LLM().user("Describe", image="https://example.com/img.jpg").chat()
-LLM().user("Summarize", audio="https://example.com/podcast.mp3").chat()
-
-# Standalone transcription (uses Whisper)
-text = LLM().transcribe("recording.wav")
-```
-
----
-
-### Evaluate & Compare Outputs
-
-Rank multiple LLM outputs with pairwise comparison, or score a single response:
-
-```python
-from cruise_llm import pairwise_evaluate
-
-# Compare outputs from different models
-outputs = [model.run(text=article) for model in models]
-result = pairwise_evaluate(results=outputs)
-print(result["rankings"])  # [2, 0, 1] = third output was best
-print(result["scores"])    # {0: 0.35, 1: 0.15, 2: 0.50}
-
-# Custom metrics
-result = pairwise_evaluate(
-    results=outputs,
-    metrics=["How interesting is it?", "How easy to understand?"],
-    weights={"How interesting is it?": 0.3, "How easy to understand?": 0.7}
-)
-
-# Score a single response (absolute scoring with scales)
-llm = LLM().user("Explain quantum computing").chat()
-score = llm.evaluate_last(metrics={"How clear?": "1-10"})
-print(score["score"])  # 0.82
-```
-
----
-
-### Flexible Conversations
-
-`.chat()` accumulates history for multi-turn conversations. For batch/single-turn work, use `.run()` instead — it resets history automatically and always returns a parsed JSON dict.
-
-```python
-chat1 = (
+# Multi-turn conversation
+chat = (
     LLM(model="fast")
     .sys("You are a bitcoin analyst")
     .user("What is proof of work?").chat()
     .user("Steel man the case for bitcoin mining").chat()
-    .user("Now steel man the case against").chat()
 )
 
-# Replay history with more intelligent yet expensive config
-chat2 = chat1.run_history(model="best", reasoning=True, reasoning_effort="high")
+# Tool calling
+def search_docs(query: str):
+    """Search internal documentation."""
+    return f"Found: '{query}' appears in onboarding.md"
 
-# Save chat histories to analyze offline or load later
-chat1.save_llm("chats/bitcoin_analysis_fast_model.json")
-chat2.save_llm("chats/bitcoin_analysis_best_model.json")
+LLM().tools(fns=[search_docs]).user("Find the onboarding guide").chat()
+
+# Images and audio
+LLM().user("What's in this image?", image="photo.jpg").chat()
+LLM().user("Summarize this", audio="meeting.mp3").chat()
+
+# Cost tracking
+llm = LLM(model="best").user("Explain quantum computing").chat()
+print(f"Cost: ${llm.total_cost():.6f}")
+
+# Save, load, export
+llm.save_llm("agents/researcher.json")
+loaded = LLM.load_llm("agents/researcher.json")
+llm.to_md("conversation.md")
 ```
 
----
-
-### Context Compaction
-
-Long conversations auto-compact to stay within context limits:
-
-```python
-llm = LLM(auto_compact=30)  # compacts at 30 messages (default)
-
-# Or compact manually at any time
-llm.compact()
-
-# Disable auto-compact
-LLM(auto_compact=0)
-```
-
----
-
-### Model Discovery & A/B Testing
-
-Pick specific models or get up-to-date top-10 from category:
-
-```python
-LLM(model="gpt-5.2")
-LLM(model="best")     # top intelligence rankings
-LLM(model="fast")     # optimized for speed
-LLM(model="cheap")
-LLM(model="open")     # open-source models
-LLM(model="optimal")  # balanced best+fast (default)
-LLM(model="codex")
-
-# Simple numeric selection (zips optimal and best)
-LLM(model=1)          # top optimal (default)
-LLM(model=2)          # top best
-LLM(model=3)          # second optimal
-
-# Deterministic selection by rank (1-indexed)
-LLM(model="best1")    # top model in best category
-LLM(model="fast3")    # 3rd fastest model
-
-# Discover and filter what's available
-LLM().get_models("claude")
-LLM().models_with_vision()
-LLM().models_with_audio_input()
-LLM().models_with_search()
-```
-
----
-
-### Generate LLMs from Descriptions
-
-Create configured LLM instances from natural language:
-
-```python
-# Generate a specialized LLM — run() always returns a dict
-summarizer = LLM().generate("Text summarizer that outputs 3 bullet points")
-result = summarizer.run(text="Long article here...")  # {"bullets": [...]}
-
-# Use a powerful model as the generator for better results
-analyst = LLM(model="best", reasoning=True).generate(
-    "A senior financial analyst for DCF valuations"
-)
-result = analyst.run(ticker="NVDA")  # {"valuation": ..., "assumptions": ...}
-
-# Generated LLMs can be saved and reused
-analyst.save_llm("agents/dcf_analyst.json")
-```
-
----
-
-### Cost Tracking
-
-Track token usage and costs across your session:
-
-```python
-llm = LLM(model="best")
-llm.user("Explain quantum computing").chat()
-llm.user("Summarize in one sentence").chat()
-
-print(f"Last call: ${llm.last_cost():.6f}")
-print(f"Session total: ${llm.total_cost():.6f}")
-print(f"Breakdown: {llm.all_costs()}")
-
-# Full cost report with per-model breakdown
-report = llm.cost_report()
-# {"total_cost": 0.003, "num_calls": 2, "avg_cost": 0.0015, "by_model": {...}}
-```
-
----
-
-### Save, Load, Export
-
-```python
-# Save an agent config
-researcher = LLM("claude-sonnet-4-5").tools(search=True)
-researcher.save_llm("agents/researcher.json")
-
-# Load
-r = LLM.load_llm("agents/researcher.json")
-r.user(f"What happened in tech {todays_date}?").chat()
-
-# Export conversation to markdown
-r.to_md(f"tech_briefing/{todays_date}.md")
-```
+Prompt queues, context compaction, web search, reasoning, vision auto-switching, and more — see the source for full capabilities.
 
 ---
 
 ### Install
 
 ```bash
-pip install cruise-llm
+pip install spaceshift
 ```
 
-Your access to models is based on your API keys from the various providers—keys are available for free from most providers. Create a local `.env` file in your project root with at least one API key. Use litellm-specific variable names:
+Your access to models is based on your API keys from the various providers — keys are available for free from most providers. Create a local `.env` file with at least one API key:
 
 ```env
 OPENAI_API_KEY=sk-proj-...
@@ -310,4 +297,3 @@ GEMINI_API_KEY=AIza...
 TOGETHERAI_API_KEY=...
 XAI_API_KEY=xai-...
 ```
-*Caveat:* Search, reasoning, and model categories/rankings (best, cheap, fast, open, etc.) has only been tested with the above listed providers.  Calling other providers (perplexity, huggingface etc.) is still available with explicit litellm model strings but may require different search/reasoning setup.

@@ -31,7 +31,7 @@ import os
 load_dotenv()
 
 SCRIPT_DIR = Path(__file__).parent
-RANKINGS_DIR = Path(__file__).parent.parent / "src" / "cruise_llm" / "rankings"
+RANKINGS_DIR = Path(__file__).parent.parent / "src" / "spaceshift" / "rankings"
 AA_MAP_PATH = SCRIPT_DIR / "aa_to_litellm_map.json"
 REASONING_CONFIG_PATH = SCRIPT_DIR / "reasoning_config.json"
 
@@ -506,7 +506,7 @@ def main():
 
     # --- Load litellm available models (needed for auto-discovery + validation) ---
     print("\nLoading litellm available models...")
-    from cruise_llm import LLM
+    from spaceshift import LLM
     available_models = LLM(v=False).get_models()
     available_set = set(available_models)
     print(f"  litellm has {len(available_models)} available models")
@@ -684,7 +684,7 @@ def main():
     with open(output_path, 'w') as f:
         json.dump(ordered, f, indent=2)
     print(f"\nSaved to {output_path}")
-    print(f"To activate: update _RANKINGS_PATH in src/cruise_llm/LLM.py line 13")
+    print(f"To activate: update _RANKINGS_PATH in src/spaceshift/LLM.py line 13")
 
 
 if __name__ == '__main__':

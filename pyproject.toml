@@ -3,16 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "cruise-llm"
-version = "0.9.0"
-description = "The fastest way to build, chain, and reuse LLM agents and flows"
+name = "spaceshift"
+version = "1.0.0"
+description = "An open research toolkit powered by LLMs. Branch into questions through tree structures, navigate the full space of perspectives, and grid-search evaluate across prompts and models to find what works best."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
     { name = "Deep Pulusani", email = "deep.pulusani@gmail.com" },
 ]
-keywords = ["llm", "ai", "agents", "langchain", "openai", "anthropic", "litellm"]
+keywords = ["llm", "prompt-engineering", "prompt-optimization", "ai", "evaluation", "openai", "anthropic", "litellm"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -37,15 +37,15 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sdeep27/cruise-llm"
-Repository = "https://github.com/sdeep27/cruise-llm"
+Homepage = "https://github.com/sdeep27/spaceshift"
+Repository = "https://github.com/sdeep27/spaceshift"
 
 [tool.hatch.build]
 include = [
-    "src/cruise_llm/**/*.py",
-    "src/cruise_llm/**/*.json",
+    "src/spaceshift/**/*.py",
+    "src/spaceshift/**/*.json",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cruise_llm"]
+packages = ["src/spaceshift"]
 
