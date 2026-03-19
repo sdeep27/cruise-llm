@@ -1,0 +1,30 @@
+---
+title: Compare Models
+description: Run a question across multiple models, auto-evaluate, and rank.
+---
+
+Compare responses from multiple models on the same prompt, with automatic evaluation and ranking.
+
+```python
+from spaceshift import compare_models
+
+result = compare_models(
+    "Explain why the sky is blue",
+    models=[1, 2, 3, 4, 5],
+    save="sky_comparison",
+)
+
+print(result["top_model"])
+print(result["rankings"])
+print(result["scores"])
+```
+
+## Outline
+
+- `compare_models(prompt, models=, save=)` — full API
+- Model selection: shorthands, explicit names, mixed
+- Evaluation: uses `pairwise_evaluate` under the hood
+- Output structure: `top_model`, `rankings`, `scores`
+- Markdown output: ranked files like `1_claude-opus-4-6.md`, `2_gpt-5.2.md`
+- Customizing evaluation metrics
+- Cost considerations when comparing many models

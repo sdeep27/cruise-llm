@@ -1,0 +1,31 @@
+---
+title: Language Transform
+description: Route questions through other languages to sample different reasoning.
+---
+
+Not a translation utility — an exploration axis. Route a question through another language to sample different reasoning patterns.
+
+```python
+from spaceshift import language_transform
+
+result = language_transform(
+    "What is the role of honor in modern society?",
+    language="korean",
+    save="honor_korean.md",
+)
+
+print(result["translated_prompt"])
+print(result["translated_response"])
+print(result["output_response"])
+```
+
+## Outline
+
+- `language_transform(prompt, language=, save=)` — full API
+- Built-in languages: Chinese, Korean, Hindi, French, Arabic
+- Custom language strings
+- The three-step process: translate prompt → generate in target language → translate back
+- Output structure: `translated_prompt`, `translated_response`, `output_response`
+- Why this produces different results than English-only generation
+- Combining with other research tools
+- Markdown output with `save=`

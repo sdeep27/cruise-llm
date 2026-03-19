@@ -1,0 +1,31 @@
+---
+title: Pairwise Evaluate
+description: Rank LLM outputs with position-swap bias mitigation and auto-generated metrics.
+---
+
+Rank any set of LLM outputs using pairwise comparison with built-in bias mitigation.
+
+```python
+from spaceshift import LLM, pairwise_evaluate
+
+responses = [LLM(model=m).user("Explain dark matter").res() for m in [1, 2, 3]]
+
+result = pairwise_evaluate(
+    results=responses,
+    metrics=["How accessible is this for a general audience?"],
+)
+
+print(result["rankings"])
+print(result["scores"])
+```
+
+## Outline
+
+- `pairwise_evaluate(results=, metrics=)` — full API
+- Position-swap bias mitigation: each pair evaluated in both orders
+- Auto-generated metrics when none provided
+- Custom metrics: list of evaluation questions
+- Bradley-Terry sampling for large sets
+- Output structure: `rankings`, `scores`
+- Single response evaluation with `.evaluate_last()`
+- Scoring scale and normalization

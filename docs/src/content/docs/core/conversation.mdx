@@ -1,0 +1,29 @@
+---
+title: Conversation
+description: Building conversations with .user(), .sys(), .asst(), .chat(), and .result().
+---
+
+Build multi-turn conversations by chaining message methods.
+
+```python
+from spaceshift import LLM
+
+chat = (
+    LLM(model="fast")
+    .sys("You are a bitcoin analyst")
+    .user("What is proof of work?").chat()
+    .user("Steel man the case for bitcoin mining").chat()
+)
+```
+
+## Outline
+
+- `.sys(content)` — set system message
+- `.user(content)` — add user message
+- `.asst(content)` — add assistant message (for few-shot examples)
+- `.chat()` — send conversation to model and get response
+- `.result()` / `.res()` — get the last response as a string
+- Chaining pattern: each method returns `self` for fluent API
+- Multi-turn conversation examples
+- Streaming with `stream=True`
+- Prompt queue: adding multiple user messages before calling `.chat()`

@@ -1,0 +1,34 @@
+---
+title: Grid Search
+description: Search across models × transforms simultaneously to find the best combination.
+---
+
+Grid search evaluates every combination of models and prompt transforms.
+
+```python
+from spaceshift import grid_search
+
+result = grid_search(
+    "Explain quantum entanglement",
+    models=[1, 2, 3, 4],
+    n_transforms=4,
+    save="quantum_grid",
+)
+
+print(result["top_output"])
+print(result["top_model"])
+print(result["top_transform"])
+print(result["grid"][:3])
+```
+
+## Outline
+
+- `grid_search(prompt, models=, n_transforms=, save=)` — full API
+- How the grid is constructed: models × transforms matrix
+- `n_transforms` — auto-select N random transforms
+- Specifying explicit transforms instead
+- Output structure: `top_output`, `top_model`, `top_transform`, `grid`
+- Evaluation: each cell scored, overall ranking
+- Markdown output: per-cell files with transform + model in filename
+- Grid size considerations and cost estimation
+- Relationship to `prompt_probe` and `compare_models`

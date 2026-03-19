@@ -1,0 +1,23 @@
+---
+title: Multimodal
+description: Work with images and audio using the LLM class.
+---
+
+Pass images and audio directly to the LLM.
+
+```python
+from spaceshift import LLM
+
+LLM().user("What's in this image?", image="photo.jpg").chat()
+LLM().user("Summarize this", audio="meeting.mp3").chat()
+```
+
+## Outline
+
+- Image input: `.user(content, image=path_or_url)`
+- Multiple images in a single message
+- Audio input: `.user(content, audio=path)`
+- `.transcribe()` — dedicated audio transcription
+- Supported formats and size limits
+- Vision auto-switching: model upgrades when images are provided
+- URL vs local file handling

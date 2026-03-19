@@ -1,0 +1,33 @@
+---
+title: Research Tree
+description: Deep dive into research_tree — decompose, explore, and generate responses for every angle.
+---
+
+`research_tree` is the flagship research function. It decomposes a topic, explores it from every direction, and generates responses for every node.
+
+```python
+from spaceshift import research_tree
+
+result = research_tree(
+    "How do general-purpose technologies reshape economic structures?",
+    sub_n=[5, 3],
+    super_n=[5],
+    side_n=[3],
+    search=True,
+)
+
+print(result["root_output"])
+print(len(result["outputs"]))
+```
+
+## Outline
+
+- Full API: all parameters and their defaults
+- How the tree is constructed: root → sub/super/side branches
+- Multi-level decomposition: `sub_n=[5, 3]` creates two levels
+- Web search integration with `search=True`
+- Output structure: `root_output`, `outputs`, tree metadata
+- File output: per-node markdown files + tree.svg visualization
+- `save=` parameter for organized output
+- Performance considerations for large trees
+- Example: complete research workflow from question to output

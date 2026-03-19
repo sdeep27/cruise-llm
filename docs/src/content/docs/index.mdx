@@ -1,0 +1,44 @@
+---
+title: spaceshift
+description: An open research toolkit powered by LLMs. Branch, navigate, evaluate.
+template: splash
+hero:
+  tagline: An open research toolkit powered by LLMs. Branch into questions through tree structures, navigate the full space of perspectives, and grid-search evaluate across prompts and models to find what works best.
+  actions:
+    - text: Quickstart
+      link: /getting-started/quickstart/
+      icon: right-arrow
+      variant: primary
+    - text: GitHub
+      link: https://github.com/sdeep27/spaceshift
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, Code } from "@astrojs/starlight/components";
+
+<Code code="pip install spaceshift" lang="bash" />
+
+<CardGrid>
+  <Card title="Branch" icon="list-format">
+    Decompose questions into tree structures. `research_tree` breaks a topic into subtopics, broader framings, and lateral perspectives — then generates responses for every node.
+  </Card>
+  <Card title="Navigate" icon="random">
+    Move through the prompt space in three directions: **down** (subprompt), **up** (superprompt), **sideways** (sideprompt). Route through other languages to sample different reasoning.
+  </Card>
+  <Card title="Evaluate" icon="approve-check-circle">
+    Find what works best. `compare_models` ranks responses across providers. `grid_search` searches models × transforms simultaneously. `pairwise_evaluate` ranks any set of outputs with bias mitigation.
+  </Card>
+</CardGrid>
+
+```python
+from spaceshift import research_tree
+
+result = research_tree(
+    "How do general-purpose technologies reshape economic structures?",
+    sub_n=[5, 3],      # 5 subtopics, each split into 3 more
+    super_n=[5],        # 5 broader framings
+    side_n=[3],         # 3 lateral perspectives
+    search=True,        # web search for current information
+)
+```

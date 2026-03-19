@@ -1,0 +1,40 @@
+---
+title: Installation
+description: Install spaceshift and configure API keys.
+---
+
+## Install
+
+```bash
+pip install spaceshift
+```
+
+## API Keys
+
+Your access to models is based on your API keys from the various providers. Create a `.env` file in your project root:
+
+```bash
+OPENAI_API_KEY=sk-proj-...
+ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=AIza...
+TOGETHERAI_API_KEY=...
+XAI_API_KEY=xai-...
+```
+
+You only need keys for the providers you want to use. Most providers offer free API keys.
+
+## Verify
+
+```python
+from spaceshift import LLM
+
+LLM().user("Hello").chat()
+```
+
+## Outline
+
+- pip install instructions
+- Provider API key setup (.env file)
+- Which keys are required vs optional
+- Verifying installation works
+- Common installation issues

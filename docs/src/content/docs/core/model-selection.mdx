@@ -1,0 +1,29 @@
+---
+title: Model Selection
+description: Shorthands, categories, fuzzy matching, and reasoning effort control.
+---
+
+Select models by name, shorthand, category, or ranking position.
+
+```python
+from spaceshift import LLM
+
+LLM(model="gpt-5.2")        # explicit model name
+LLM(model="best")            # top intelligence ranking
+LLM(model="fast")            # optimized for speed
+LLM(model="cheap")           # lowest cost
+LLM(model="open")            # open-source models
+LLM(model=1)                 # rank 1 overall (default)
+LLM(model="gpt-5.4(xhigh)") # inline reasoning effort
+```
+
+## Outline
+
+- Explicit model names (any litellm-supported model)
+- Category shorthands: `"best"`, `"fast"`, `"cheap"`, `"open"`, `"long"`
+- Numeric ranking: `1` through N within each category
+- Combined: `"fast3"` = 3rd fastest model
+- Fuzzy matching: partial names resolved automatically
+- Reasoning effort: `(low)`, `(medium)`, `(high)`, `(xhigh)` suffix
+- `resolve_model()` — see what a shorthand resolves to
+- How rankings are maintained and updated

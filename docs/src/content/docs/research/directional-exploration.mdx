@@ -1,0 +1,37 @@
+---
+title: Directional Exploration
+description: Navigate prompt space with subprompt, superprompt, sideprompt, and prompt_tree.
+---
+
+Most prompt decomposition only goes downward. spaceshift moves in three directions.
+
+```python
+from spaceshift import subprompt, superprompt, sideprompt, prompt_tree
+
+# Down — decompose into focused subtopics
+subs = subprompt("What are the effects of AI on labor markets?", n=[5])
+
+# Up — discover the bigger question this is a piece of
+supers = superprompt("What are the effects of AI on labor markets?", n=[3])
+
+# Sideways — explore sibling questions at the same abstraction level
+sides = sideprompt("What are the effects of AI on labor markets?", n=[4])
+
+# All three at once, with tree visualization
+tree = prompt_tree(
+    "What are the effects of AI on labor markets?",
+    sub_n=[5], super_n=[3], side_n=[4],
+    viz=True,
+)
+```
+
+## Outline
+
+- `subprompt(prompt, n=[])` — decompose downward into subtopics
+- `superprompt(prompt, n=[])` — generalize upward to broader framings
+- `sideprompt(prompt, n=[])` — lateral exploration of sibling questions
+- `prompt_tree()` — all three directions combined
+- Multi-level decomposition with nested `n` values (e.g., `n=[5, 3]`)
+- Tree visualization with graphviz
+- Why superprompt and sideprompt are novel contributions
+- Practical research workflows combining all three

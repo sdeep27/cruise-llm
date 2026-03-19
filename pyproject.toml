@@ -39,6 +39,10 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/sdeep27/spaceshift"
 Repository = "https://github.com/sdeep27/spaceshift"
+Documentation = "https://spcshft.com"
+
+[project.scripts]
+spaceshift = "spaceshift.cli:main"
 
 [tool.hatch.build]
 include = [

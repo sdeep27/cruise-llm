@@ -43,5 +43,9 @@ test_md/
 CLAUDE.md
 claude/
 .claude
+# Docs
+docs/node_modules/
+docs/.astro/
+
 # macOS
 .DS_Store

@@ -1,0 +1,23 @@
+---
+title: JSON & Structured Output
+description: Get structured JSON responses with .chat_json(), .run(), and .res_json().
+---
+
+Force the model to return valid JSON.
+
+```python
+from spaceshift import LLM
+
+llm = LLM().sys("Return JSON with keys: name, age").user("Alice is 30")
+result = llm.chat_json()
+print(llm.res_json())  # {"name": "Alice", "age": 30}
+```
+
+## Outline
+
+- `.chat_json()` — chat with JSON mode enabled
+- `.res_json()` — parse the last response as JSON
+- `.run()` — combines chat_json + res_json for function-style usage
+- JSON schema enforcement via system prompts
+- Error handling when JSON parsing fails
+- When to use `.chat_json()` vs `.run()`

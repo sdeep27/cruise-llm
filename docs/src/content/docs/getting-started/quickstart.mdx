@@ -1,0 +1,44 @@
+---
+title: Quickstart
+description: A 5-minute tour from basic LLM usage to research trees.
+---
+
+A 5-minute tour from basic LLM calls to full research tree exploration.
+
+## Basic LLM Usage
+
+```python
+from spaceshift import LLM
+
+LLM().user("Explain quantum computing in one paragraph").chat()
+```
+
+## LLM as a Function
+
+```python
+sentiment = LLM().sys("Classify sentiment. Return JSON with key 'sentiment'.").user("{text}")
+sentiment.run("I love this product!")    # {"sentiment": "positive"}
+```
+
+## Research Tree
+
+```python
+from spaceshift import research_tree
+
+result = research_tree(
+    "What are the second-order effects of AI on labor markets?",
+    sub_n=[5, 3],
+    super_n=[3],
+    side_n=[3],
+)
+```
+
+## Outline
+
+- Hello world: basic `.user().chat()` call
+- Model selection shorthand (`model=1`, `model="fast"`)
+- LLM as function with `{placeholders}` and `.run()`
+- Structured JSON output with `.run()` / `.chat_json()`
+- Multi-turn conversation chaining
+- First research_tree call
+- What the output files look like

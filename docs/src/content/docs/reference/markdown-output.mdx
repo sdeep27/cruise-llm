@@ -1,0 +1,22 @@
+---
+title: Markdown Output
+description: Structured markdown output with YAML frontmatter and the save= pattern.
+---
+
+Every tool in spaceshift supports saving structured markdown with YAML frontmatter.
+
+```python
+compare_models("Explain dark matter", save="dark_matter")
+research_tree("Effects of AI on education", save="ai_education")
+grid_search("Explain gravity", save="gravity_grid")
+```
+
+## Outline
+
+- The `save=` pattern: how it works across all tools
+- YAML frontmatter structure: what metadata is included
+- `.to_md()` — export any conversation to markdown
+- File naming conventions for ranked output
+- Directory structure for multi-file output (research_tree, grid_search)
+- Frontmatter fields: model, timestamp, scores, transform, etc.
+- Using saved output for further analysis

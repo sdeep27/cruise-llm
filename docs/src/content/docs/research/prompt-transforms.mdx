@@ -1,0 +1,28 @@
+---
+title: Prompt Transforms
+description: 20+ built-in transforms that reframe questions in different ways.
+---
+
+Transforms rewrite a prompt from a different angle. Used internally by `prompt_probe` and `grid_search`, but available directly.
+
+```python
+from spaceshift import prompt_transform, list_transforms
+
+list_transforms()
+
+result = prompt_transform("Explain gravity", "abstract_up")
+# e.g. "Explain fundamental forces in physics"
+
+result = prompt_transform("Explain gravity", "inverse")
+# e.g. "What would a universe without gravity look like?"
+```
+
+## Outline
+
+- `list_transforms()` — see all available transforms
+- `prompt_transform(prompt, transform_name)` — apply a single transform
+- Categories: abstraction shifts, perspective changes, dimensional manipulation, etc.
+- How transforms work under the hood (LLM-powered rewriting)
+- Using transforms with `prompt_probe` and `grid_search`
+- Custom transforms vs built-in
+- Full catalog of available transforms (→ see Reference: Transforms Catalog)

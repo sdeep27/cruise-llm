@@ -1,0 +1,22 @@
+---
+title: "Overview: The LLM Class"
+description: What the LLM class is, its design philosophy, and basic usage patterns.
+---
+
+The `LLM` class is the foundation of spaceshift. One class, all providers, via [litellm](https://github.com/BerriAI/litellm).
+
+```python
+from spaceshift import LLM
+
+LLM().user("Explain quantum computing").chat(stream=True)
+```
+
+## Outline
+
+- Design philosophy: functional, composable, dict in / dict out
+- One class wraps all providers (OpenAI, Anthropic, Google, Together, xAI, etc.)
+- Chainable API: `.sys()`, `.user()`, `.chat()`, `.run()`
+- How LLM works as both a conversation object and a reusable function
+- Model selection defaults and overrides
+- Streaming and non-streaming modes
+- The role of litellm under the hood

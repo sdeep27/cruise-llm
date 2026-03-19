@@ -1,0 +1,26 @@
+---
+title: Tool Calling
+description: Give LLMs access to functions with .tools() and auto-schema from type hints.
+---
+
+Define Python functions and let the model call them automatically.
+
+```python
+from spaceshift import LLM
+
+def search_docs(query: str):
+    """Search internal documentation."""
+    return f"Found: '{query}' appears in onboarding.md"
+
+LLM().tools(fns=[search_docs]).user("Find the onboarding guide").chat()
+```
+
+## Outline
+
+- `.tools(fns=[...])` — register callable functions
+- Auto-schema generation from type hints and docstrings
+- How the tool calling loop works
+- Multiple tools in a single conversation
+- Tool results and follow-up responses
+- Supported parameter types
+- Examples: search, calculation, API integration

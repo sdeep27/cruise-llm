@@ -1,0 +1,28 @@
+---
+title: Templates & Batch Processing
+description: Use {placeholder} interpolation, .run_batch(), and .result_batch() for parallel processing.
+---
+
+Define reusable LLM functions with `{placeholder}` interpolation, then run them over many inputs.
+
+```python
+from spaceshift import LLM
+
+sentiment = LLM().sys("Classify sentiment. Return JSON with key 'sentiment'.").user("{text}")
+sentiment.run("I love this product!")    # {"sentiment": "positive"}
+
+results = sentiment.run_batch(
+    [{"text": "Love it!"}, {"text": "Terrible"}, {"text": "It's okay"}],
+    concurrency=10,
+)
+```
+
+## Outline
+
+- `{placeholder}` syntax in system and user messages
+- Positional vs keyword argument interpolation in `.run()`
+- `.run_batch(inputs, concurrency=)` — parallel batch processing
+- `.result_batch()` — get raw string results from batch
+- Concurrency control and rate limiting
+- Error handling in batch operations
+- Practical examples: classification, extraction, summarization pipelines

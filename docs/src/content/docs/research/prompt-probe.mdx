@@ -1,0 +1,30 @@
+---
+title: Prompt Probe
+description: Sample the output space by applying transforms, generating responses, and evaluating.
+---
+
+`prompt_probe` samples the output space by applying random transforms, generating responses for each variant, then evaluating to find the best one.
+
+```python
+from spaceshift import prompt_probe
+
+result = prompt_probe(
+    "Explain why the sky is blue",
+    n=6,
+    save="sky_probe",
+)
+
+print(result["top_output"])
+print(result["top_transform"])
+print(result["rankings_transforms"])
+```
+
+## Outline
+
+- `prompt_probe(prompt, n=, save=)` — full API
+- How it works: select transforms → apply → generate → evaluate
+- `n` parameter: number of random transforms to try
+- Output structure: `top_output`, `top_transform`, `rankings_transforms`
+- Relationship to `grid_search` (probe = single model, grid = models × transforms)
+- When to use prompt_probe vs grid_search
+- Markdown output with `save=`

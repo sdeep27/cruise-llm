@@ -1,0 +1,26 @@
+---
+title: History & Persistence
+description: Compact conversations, save/load state, and export to markdown.
+---
+
+Manage conversation history and persist LLM state.
+
+```python
+from spaceshift import LLM
+
+llm = LLM(model="best").user("Explain dark matter").chat()
+
+llm.save_llm("agents/researcher.json")
+loaded = LLM.load_llm("agents/researcher.json")
+llm.to_md("conversation.md")
+```
+
+## Outline
+
+- `.compact()` — summarize conversation to reduce context length
+- `.save_llm(path)` — serialize full LLM state to JSON
+- `.load_llm(path)` — restore LLM from saved state
+- `.to_md(path)` — export conversation as formatted markdown
+- What gets saved: messages, model config, system prompt, metadata
+- Context window management strategies
+- When to compact vs start fresh

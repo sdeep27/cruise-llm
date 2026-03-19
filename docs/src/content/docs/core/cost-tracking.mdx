@@ -1,0 +1,24 @@
+---
+title: Cost Tracking
+description: Track API costs with .last_cost(), .total_cost(), and .cost_report().
+---
+
+Every LLM call tracks token usage and cost automatically.
+
+```python
+from spaceshift import LLM
+
+llm = LLM(model="best").user("Explain quantum computing").chat()
+print(f"Last call: ${llm.last_cost():.6f}")
+print(f"Session total: ${llm.total_cost():.6f}")
+```
+
+## Outline
+
+- `.last_cost()` — cost of the most recent API call
+- `.total_cost()` — cumulative cost across all calls on this instance
+- `.cost_report()` — detailed breakdown
+- Token counting: input, output, total
+- Cost calculation across different providers
+- Batch operation cost tracking
+- Tips for cost optimization
