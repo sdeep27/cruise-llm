@@ -45,7 +45,8 @@ def _is_shorthand(model_id):
 
 def validate_model(model_id):
     """Resolve model_id to a litellm name. Shorthands (1, best1, open) resolve normally.
-    Exact litellm names pass through. Anything else raises with fuzzy suggestions."""
+    Exact litellm names and ranked models pass through. Provider-prefixed models
+    (e.g. 'together_ai/...') are trusted. Anything else raises with fuzzy suggestions."""
     available = _get_available_models()
     if isinstance(model_id, str) and model_id in available:
         return model_id
@@ -56,6 +57,16 @@ def validate_model(model_id):
             return llm.model
         except Exception:
             pass
+
+    # Trust models from our own rankings (may be newer than litellm's catalog)
+    if isinstance(model_id, str):
+        ranked_models = {_get_model_name(e) for cat in model_rankings.values() for e in cat}
+        if model_id in ranked_models:
+            return model_id
+
+    # Trust explicit provider-prefixed models (user knows what they want)
+    if isinstance(model_id, str) and '/' in model_id:
+        return model_id
 
     clean = model_id.strip() if isinstance(model_id, str) else str(model_id)
     matches = rapidfuzz.process.extract(clean, available, scorer=rapidfuzz.fuzz.WRatio, limit=5)
