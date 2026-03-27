@@ -229,10 +229,10 @@ class LLM:
                 self.search_enabled = False
         elif self.search_enabled:
             if not self._has_search(self.model):
-                self._update_model_to_search()
+                self._update_model_for("search")
         if self.reasoning_enabled:
             if not self._has_reasoning(self.model):
-                self._update_model_to_reasoning()
+                self._update_model_for("reasoning")
         self.auto_compact = auto_compact
         self.max_retries = max_retries
         self.reasoning_contents = []
@@ -244,7 +244,7 @@ class LLM:
             self.turn_off_debug()
     
     def _resolve_args(self, **kwargs):
-        """Merges chat, chat_json, res, res_json kwargs with instance init defaults."""
+        """Merges execution method kwargs with instance init defaults."""
         instance_defaults   = {
             "model": kwargs.get("model", self.model),
             "temperature": kwargs.get("temperature", self.temperature),
@@ -318,10 +318,17 @@ class LLM:
             text = '\n'.join(lines).strip()
         return text
 
-    def _enforce_json(self, text):
-        """Use LLM to fix malformed JSON. Returns parsed dict or {} on failure."""
-        enforcer = LLM(model="fast1", stream=False, v=False) \
-            .sys('You are a JSON enforcer. The user will provide text that should be valid JSON but may have issues. Return ONLY valid JSON that can be parsed by json.loads. Fix any syntax errors, missing brackets, or malformed structures. Output nothing except the corrected JSON.') \
+    def _enforce_json(self, text, context=None):
+        """Use LLM to extract/repair JSON from text. Falls back to {} on failure."""
+        sys_parts = [
+            'Extract or repair JSON from the user\'s text. The text may be: valid JSON, malformed JSON, '
+            'JSON wrapped in markdown or explanation, or a natural-language response that should have been JSON.'
+        ]
+        if context:
+            sys_parts.append(f'The original task was: "{context}". Use this to reconstruct the expected JSON if needed.')
+        sys_parts.append('Return ONLY valid JSON. No explanation, no markdown.')
+        enforcer = LLM(model="claude-haiku-4-5", stream=False, v=False) \
+            .sys(' '.join(sys_parts)) \
             .user('{text}')
         return enforcer.run(text=text, enforce=False)
 
@@ -332,7 +339,14 @@ class LLM:
             return json.loads(text)
         except (json.JSONDecodeError, TypeError):
             if enforce:
-                return self._enforce_json(text)
+                parts = []
+                for msg in self.chat_msgs:
+                    if msg['role'] == 'system':
+                        parts.append(msg.get('content', ''))
+                    elif msg['role'] == 'user' and isinstance(msg.get('content'), str):
+                        parts.append(msg['content'])
+                context = ' | '.join(parts) if parts else None
+                return self._enforce_json(text, context)
             print(f"!! Error parsing JSON: {text}")
             return {}
 
@@ -340,12 +354,18 @@ class LLM:
         usage = getattr(response, 'usage', None)
         if not usage:
             return
-        input_tokens = getattr(usage, 'prompt_tokens', 0) or 0
-        output_tokens = getattr(usage, 'completion_tokens', 0) or 0
-        try:
-            total_cost = litellm.completion_cost(completion_response=response, model=model)
-        except:
-            total_cost = 0
+        if hasattr(usage, 'input_tokens'):  # Responses API format
+            input_tokens = getattr(usage, 'input_tokens', 0) or 0
+            output_tokens = getattr(usage, 'output_tokens', 0) or 0
+            ticks = getattr(usage, 'cost_in_usd_ticks', 0)
+            total_cost = ticks / 1e9 if ticks else 0
+        else:  # Chat Completions API format
+            input_tokens = getattr(usage, 'prompt_tokens', 0) or 0
+            output_tokens = getattr(usage, 'completion_tokens', 0) or 0
+            try:
+                total_cost = litellm.completion_cost(completion_response=response, model=model)
+            except:
+                total_cost = 0
         self.costs.append({
             "model": model,
             "input_tokens": input_tokens,
@@ -442,7 +462,7 @@ class LLM:
                 self.search_context_size = search_context_size
         elif search:
             if not self._has_search(self.model):
-                self._update_model_to_search()
+                self._update_model_for("search")
             self.search_enabled = True
             self.temperature = None # openAI search model does not accept temperature
             if search_context_size:
@@ -453,7 +473,7 @@ class LLM:
                 self.search_context_size = None
         if reasoning:
             if not self._has_reasoning(self.model):
-                self._update_model_to_reasoning()
+                self._update_model_for("reasoning")
             self.reasoning_enabled = True
             self.temperature = None # Anthropic doesnt want temperature when theres reasoning 
             if reasoning_effort:
@@ -464,29 +484,20 @@ class LLM:
                 self.reasoning_effort = None
         return self
 
-    def chat(self, **kwargs) -> LLM:
+    def chat(self, json=False, **kwargs) -> LLM:
         """
         Run the LLM prediction based on current history, appending the response to the internal log.
         Generally follows a .user update, e.g. LLM().user("hi").chat()
         This is a stateful call; it updates `self.chat_msgs`.
 
         Args:
+            json (bool): If True, enforces JSON mode on the model response.
             **kwargs: Overrides for run-specific settings (temperature, model, etc.).
 
         Returns:
             self: For chaining (e.g., `.chat().user("Next question")`).
         """
-        self._run_prediction(**kwargs)
-        return self
-
-    def chat_json(self, **kwargs) -> LLM:
-        """
-        Same as `chat()`, but enforces JSON mode on the model response.
-
-        Returns:
-            self: For chaining.
-        """
-        self._run_prediction(jsn_mode=True, **kwargs)
+        self._run_prediction(jsn_mode=json, **kwargs)
         return self
     
     def result(self, **kwargs) -> str:
@@ -633,9 +644,10 @@ class LLM:
         self.chat_msgs = saved_msgs
         return result
 
-    def res_json(self, enforce=True, **kwargs) -> dict:
+    def result_json(self, enforce=True, **kwargs) -> dict:
         """
-        Run the prediction in JSON mode and return parsed JSON, without template interpolation.
+        Run the prediction in JSON mode, return parsed JSON, and reset chat history
+        (preserving the System prompt). Like result() but returns dict instead of str.
 
         Unlike run(), this does not treat {braces} in messages as template variables.
         Use this when the chat history already contains the final prompt text.
@@ -647,10 +659,9 @@ class LLM:
         Returns:
             dict: The parsed JSON response.
         """
-        saved_msgs = copy.deepcopy(self.chat_msgs)
         self._run_prediction(jsn_mode=True, **kwargs)
         result = self._parse_json(self.last(), enforce)
-        self.chat_msgs = saved_msgs
+        self._reset_msgs()
         return result
 
     def _clone_for_batch(self) -> LLM:
@@ -688,6 +699,28 @@ class LLM:
         clone.auto_compact = self.auto_compact
         return clone
 
+    def _batch_execute(self, items, exec_fn, concurrency, return_errors, error_fn, label):
+        """Shared batch execution logic with ThreadPoolExecutor."""
+        results = [None] * len(items)
+        def _wrapped(index, item):
+            clone = self._clone_for_batch()
+            try:
+                return index, exec_fn(clone, item), clone.costs
+            except Exception as e:
+                if return_errors:
+                    return index, error_fn(e, item), []
+                raise
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(_wrapped, i, item): i for i, item in enumerate(items)}
+            for future in as_completed(futures):
+                idx, result, costs = future.result()
+                results[idx] = result
+                self.costs.extend(costs)
+        if self.v:
+            total = sum(c["total_cost"] for c in self.costs)
+            print(f"{label}: {len(items)} calls, total cost: ${total:.6f}")
+        return results
+
     def run_batch(self, inputs, concurrency=5, return_errors=False, enforce=True) -> list[dict]:
         """
         Run the LLM template across multiple inputs concurrently, returning parsed JSON.
@@ -696,7 +729,7 @@ class LLM:
 
         Args:
             inputs (list[dict]): List of template variable dicts, e.g. [{"text": "hello"}, {"text": "bye"}]
-            concurrency (int): Max parallel threads. Defaults to 3.
+            concurrency (int): Max parallel threads. Defaults to 5.
             return_errors (bool): If True, failed calls return {"error": str, "input": dict} instead of raising.
             enforce (bool): If True (default), uses an LLM to fix malformed JSON on parse failure.
 
@@ -708,29 +741,13 @@ class LLM:
             results = classifier.run_batch([{"text": "great"}, {"text": "awful"}], concurrency=10)
             # results: [{"sentiment": "positive"}, {"sentiment": "negative"}]
         """
-        results = [None] * len(inputs)
-
-        def _exec(index, input_kwargs):
-            clone = self._clone_for_batch()
-            try:
-                return index, clone.run(enforce=enforce, **input_kwargs), clone.costs
-            except Exception as e:
-                if return_errors:
-                    return index, {"error": str(e), "input": input_kwargs}, []
-                raise
-
-        with ThreadPoolExecutor(max_workers=concurrency) as pool:
-            futures = {pool.submit(_exec, i, inp): i for i, inp in enumerate(inputs)}
-            for future in as_completed(futures):
-                idx, result, costs = future.result()
-                results[idx] = result
-                self.costs.extend(costs)
-
-        if self.v:
-            total = sum(c["total_cost"] for c in self.costs)
-            print(f"run_batch: {len(inputs)} calls, total cost: ${total:.6f}")
-
-        return results
+        return self._batch_execute(
+            inputs,
+            lambda clone, inp: clone.run(enforce=enforce, **inp),
+            concurrency, return_errors,
+            lambda e, inp: {"error": str(e), "input": inp},
+            "run_batch",
+        )
 
     def result_batch(self, prompts, concurrency=5, return_errors=False, **kwargs) -> list[str]:
         """
@@ -738,43 +755,20 @@ class LLM:
 
         Args:
             prompts (list[str]): List of user prompts.
-            concurrency (int): Max parallel threads. Defaults to 3.
+            concurrency (int): Max parallel threads. Defaults to 5.
             return_errors (bool): If True, failed calls return error string instead of raising.
             **kwargs: Overrides passed to each prediction (model, temperature, etc.).
 
         Returns:
             list[str]: Responses in input order.
         """
-        results = [None] * len(prompts)
-        if self.v:
-            print(f"result_batch: running {len(prompts)} prompts (concurrency={concurrency})")
-
-        def _exec(index, prompt):
-            clone = self._clone_for_batch()
-            try:
-                res = clone.user(prompt).result(**kwargs)
-                if self.v:
-                    print(f"  [{index+1}/{len(prompts)}] done")
-                return index, res, clone.costs
-            except Exception as e:
-                if self.v:
-                    print(f"  [{index+1}/{len(prompts)}] error: {e}")
-                if return_errors:
-                    return index, f"[error] {e}", []
-                raise
-
-        with ThreadPoolExecutor(max_workers=concurrency) as pool:
-            futures = {pool.submit(_exec, i, p): i for i, p in enumerate(prompts)}
-            for future in as_completed(futures):
-                idx, result, costs = future.result()
-                results[idx] = result
-                self.costs.extend(costs)
-
-        if self.v:
-            total = sum(c["total_cost"] for c in self.costs)
-            print(f"result_batch: {len(prompts)} calls, total cost: ${total:.6f}")
-
-        return results
+        return self._batch_execute(
+            prompts,
+            lambda clone, p: clone.user(p).result(**kwargs),
+            concurrency, return_errors,
+            lambda e, p: f"[error] {e}",
+            "result_batch",
+        )
 
     def last_json(self, enforce=True) -> dict:
         """Parse the last assistant response as JSON, stripping markdown fences if present."""
@@ -973,7 +967,7 @@ class LLM:
                         self.search_annotations.append(annotations)
 
         self.asst(output_text, merge=False)
-        self._track_cost_responses(resp, args['model'])
+        self._track_cost(resp, args['model'])
         if args['v']:
             actual_model = resp.model or args['model']
             print(f"ASSISTANT ({actual_model}):")
@@ -985,23 +979,6 @@ class LLM:
             self.user(self.prompt_queue[prompt_queue_index])
             self.prompt_queue_remaining -= 1
             self._run_responses_search(args, jsn_mode)
-
-    def _track_cost_responses(self, resp, model):
-        """Track costs from Responses API format."""
-        usage = getattr(resp, 'usage', None)
-        if not usage:
-            return
-        input_tokens = getattr(usage, 'input_tokens', 0) or 0
-        output_tokens = getattr(usage, 'output_tokens', 0) or 0
-        total_cost = getattr(usage, 'cost_in_usd_ticks', 0)
-        if total_cost:
-            total_cost = total_cost / 1e9  # Convert from ticks to USD
-        self.costs.append({
-            "model": model,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "total_cost": total_cost,
-        })
 
     def _run_prediction(self, jsn_mode=False, **kwargs):
         if self.auto_compact and len(self.chat_msgs) >= self.auto_compact:
@@ -1150,10 +1127,6 @@ class LLM:
                 if self.v: print('Received Tool Call Request.\n')
                 return True
         return False
-    def _requests_tool_streaming(self):
-        "Currently tool calls are not supported for streaming responses. To be added."
-        pass
-    
     def user(self, prompt=None, image=None, audio=None) -> LLM:
         """
         Add a User message to the history.
@@ -1175,9 +1148,9 @@ class LLM:
             content = prompt
         else:
             if image is not None and not self._has_vision(self.model):
-                self._update_model_to_vision()
+                self._update_model_for("vision")
             if audio is not None and not self._has_audio_input(self.model):
-                self._update_model_to_audio_input()
+                self._update_model_for("audio")
 
             content = []
             if prompt is not None:
@@ -1533,10 +1506,10 @@ class LLM:
         generator.user(description).chat()
 
         if toolkit._vision_required and not target._has_vision(target.model):
-            target._update_model_to_vision()
+            target._update_model_for("vision")
 
         if toolkit._audio_required and not target._has_audio_input(target.model):
-            target._update_model_to_audio_input()
+            target._update_model_for("audio")
 
         target._generated_from = description
         target._generation_summary = toolkit.configuration_summary
@@ -1643,52 +1616,32 @@ class LLM:
     def _has_vision(self, model):
         return litellm.supports_vision(model=model) == True
 
-    def _update_model_to_reasoning(self):
-        # Traverse optimal models first, then fall back to best
-        for category in ["optimal", "best"]:
-            for entry in model_rankings.get(category, []):
-                model = _get_model_name(entry)
-                if self._has_reasoning(model):
-                    self.model = model
-                    effort = _get_reasoning_effort(entry)
-                    if effort:
-                        self.reasoning_effort = effort
-                    print(f'Updated model for reasoning: {model}')
-                    return
-
-    def _update_model_to_search(self):
-        # Traverse optimal models first, then fall back to best
-        for category in ["optimal", "best"]:
-            for entry in model_rankings.get(category, []):
-                model = _get_model_name(entry)
-                if self._has_search(model):
-                    self.model = model
-                    print(f'Updated model for search: {model}')
-                    return
-
-    def _update_model_to_vision(self):
-        # Traverse optimal models first, then fall back to best
-        for category in ["optimal", "best"]:
-            for entry in model_rankings.get(category, []):
-                model = _get_model_name(entry)
-                if self._has_vision(model):
-                    self.model = model
-                    print(f'Updated model for vision: {model}')
-                    return
-
     def _has_audio_input(self, model):
         if model in _AUDIO_INPUT_OVERRIDES:
             return True
         return litellm.supports_audio_input(model=model) == True
 
-    def _update_model_to_audio_input(self):
+    def _update_model_for(self, capability):
+        """Auto-select a ranked model that supports the given capability."""
+        checks = {
+            "search": self._has_search,
+            "reasoning": self._has_reasoning,
+            "vision": self._has_vision,
+            "audio": self._has_audio_input,
+        }
+        check_fn = checks[capability]
         for category in ["optimal", "best"]:
             for entry in model_rankings.get(category, []):
                 model = _get_model_name(entry)
-                if self._has_audio_input(model):
+                if check_fn(model):
                     self.model = model
-                    self._clamp_reasoning_effort()
-                    print(f'Updated model for audio: {model}')
+                    if capability == "reasoning":
+                        effort = _get_reasoning_effort(entry)
+                        if effort:
+                            self.reasoning_effort = effort
+                    if capability == "audio":
+                        self._clamp_reasoning_effort()
+                    print(f'Updated model for {capability}: {model}')
                     return
 
     def _clamp_reasoning_effort(self):

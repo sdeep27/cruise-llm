@@ -87,7 +87,7 @@ class TestEvaluateWithRealLLMOutputs:
         variations = LLM(model=1, v=False).sys(
             "Generate 3 different system prompts for the given task. "
             "Return JSON: {prompts: [str, str, str]}"
-        ).user(f"Task: {base_task}").res_json()
+        ).user(f"Task: {base_task}").result_json()
 
         # Test each prompt variation on same input
         test_article = "The stock market rose 2% today amid positive jobs data..."
@@ -200,7 +200,7 @@ class TestEvaluateLastRealWorkflows:
         """Evaluate a JSON-mode response."""
         llm = LLM(model=1, v=False).sys(
             "Extract sentiment. Return: {sentiment: positive|negative|neutral, confidence: 0-1}"
-        ).user("I love this product! Best purchase ever!").chat_json()
+        ).user("I love this product! Best purchase ever!").chat(json=True)
 
         score = llm.evaluate_last(
             metrics={

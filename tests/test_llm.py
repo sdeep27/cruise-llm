@@ -121,16 +121,16 @@ class TestPipelineMode:
 
 
 class TestJsonOutput:
-    """Test res_json() returns parsed JSON."""
+    """Test result_json() returns parsed JSON."""
 
-    def test_res_json_returns_dict(self):
+    def test_result_json_returns_dict(self):
         """Test JSON output mode returns a dict."""
         llm = LLM(v=False, max_tokens=200)
         llm.sys('Extract entities from text. Return JSON with key "entities" containing a list of entity strings.')
 
-        result = llm.user('Apple announced a new iPhone in Cupertino').res_json()
+        result = llm.user('Apple announced a new iPhone in Cupertino').result_json()
 
-        assert isinstance(result, dict), f"res_json() should return dict, got {type(result)}"
+        assert isinstance(result, dict), f"result_json() should return dict, got {type(result)}"
         assert 'entities' in result, f"Result should have 'entities' key, got: {result}"
         assert isinstance(result['entities'], list), "'entities' should be a list"
         print(f"   Extracted entities: {result['entities']}")

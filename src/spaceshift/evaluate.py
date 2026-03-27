@@ -342,7 +342,7 @@ def _generate_metrics(items, additional_information, prompts, results, mode="abs
             f"Here is the prompt, return 3 evaluation metrics:\n\n"
             f"{prompt_text}\n\n"
             f"{'Additional context: ' + additional_information if additional_information else ''}"
-        ).res_json()
+        ).result_json()
 
         return result.get("metrics", list(_DEFAULT_METRICS_PAIRWISE))
 
@@ -355,7 +355,7 @@ def _generate_metrics(items, additional_information, prompts, results, mode="abs
         f"Suggest 3 broad evaluation metrics for responses to this prompt:\n\n"
         f"{prompt_text}\n\n"
         f"Additional context: {additional_information or 'General evaluation'}"
-    ).res_json()
+    ).result_json()
 
     return result.get("metrics", dict(_DEFAULT_METRICS_ABSOLUTE))
 
@@ -394,7 +394,7 @@ Evaluate based on: {metric_question}
 Which response is better? Reply with JSON only:
 {{"winner": "A" or "B" or "tie", "reasoning": "brief explanation"}}"""
 
-        result = LLM(model=1, v=False).user(eval_prompt).res_json()
+        result = LLM(model=1, v=False).user(eval_prompt).result_json()
         return result.get("winner", "tie").upper()
 
     # First comparison: A, B order
@@ -474,7 +474,7 @@ For EACH metric, determine which response is better. You MUST use the exact keys
 
     def do_comparison(first, second, first_prompt, second_prompt):
         eval_prompt = build_prompt(first, second, first_prompt, second_prompt)
-        return LLM(model=1, v=False).user(eval_prompt).res_json()
+        return LLM(model=1, v=False).user(eval_prompt).result_json()
 
     def extract_winners(result, warn_label=""):
         winners = {}
@@ -541,7 +541,7 @@ Scale: {scale}
 Reply with JSON only:
 {{"score": <number between {min_val} and {max_val}>, "reasoning": "brief explanation"}}"""
 
-    result = LLM(model=1, v=False).user(eval_prompt).res_json()
+    result = LLM(model=1, v=False).user(eval_prompt).result_json()
 
     score = result.get("score", (min_val + max_val) / 2)
 
@@ -588,7 +588,7 @@ Evaluate on each of the following metrics:
 For EACH metric, provide a score. You MUST use the exact keys metric_1, metric_2, etc. Reply with JSON only:
 {{{example_keys}}}"""
 
-    result = LLM(model=1, v=False).user(eval_prompt).res_json()
+    result = LLM(model=1, v=False).user(eval_prompt).result_json()
 
     scores = {}
     for idx, question in enumerate(metric_keys, 1):

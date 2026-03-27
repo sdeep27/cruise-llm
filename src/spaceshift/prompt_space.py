@@ -544,7 +544,7 @@ def research_tree(
         job = jobs[idx]
         llm = LLM(model=job["output_model"], search=search, v=False)
         llm.sys(_RESEARCH_SYSTEM)
-        result = llm.user(job["prompt"]).res_json()
+        result = llm.user(job["prompt"]).result_json()
         title = result.get("title", "")
         content = result.get("content") or llm.last()
         citations = _extract_citations(llm.search_annotations)
@@ -713,7 +713,7 @@ def research_expand(
         print(f"Generating root output with model={root_model}...")
     root_llm = LLM(model=root_model, search=search, v=False)
     root_llm.sys(_RESEARCH_SYSTEM)
-    root_result = root_llm.user(prompt).res_json()
+    root_result = root_llm.user(prompt).result_json()
     root_title = root_result.get("title", "")
     root_response = root_result.get("content") or root_llm.last()
     root_citations = _extract_citations(root_llm.search_annotations)
@@ -786,7 +786,7 @@ def research_expand(
 
         def _gen_output(idx, child):
             llm = output_llm._clone_for_batch()
-            result = llm.user(child["prompt"]).res_json()
+            result = llm.user(child["prompt"]).result_json()
             title = result.get("title", "")
             content = result.get("content") or llm.last()
             citations = _extract_citations(llm.search_annotations)
