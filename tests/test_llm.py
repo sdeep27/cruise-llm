@@ -29,7 +29,7 @@ class TestImportAndInit:
 
 
 class TestModelDiscovery:
-    """Test get_models(), models_with_search(), and models_with_reasoning() methods."""
+    """Test get_models() and models_with() methods."""
 
     def test_get_models_returns_list(self):
         """Test get_models() returns a non-empty list."""
@@ -46,15 +46,15 @@ class TestModelDiscovery:
         assert all("gpt" in m for m in gpt_models), "All filtered models should contain 'gpt'"
 
     def test_models_with_search(self):
-        """Test models_with_search() returns models."""
+        """Test models_with('search') returns models."""
         llm = LLM(v=False)
-        search_models = llm.models_with_search()
+        search_models = llm.models_with("search")
         assert isinstance(search_models, list), "Should return a list"
 
     def test_models_with_reasoning(self):
-        """Test models_with_reasoning() returns models."""
+        """Test models_with('reasoning') returns models."""
         llm = LLM(v=False)
-        reasoning_models = llm.models_with_reasoning()
+        reasoning_models = llm.models_with("reasoning")
         assert isinstance(reasoning_models, list), "Should return a list"
 
 
@@ -102,7 +102,7 @@ class TestPipelineMode:
         pipeline = LLM(v=False, max_tokens=100)
         pipeline.sys('You are a helpful assistant. Keep responses brief.')
 
-        result1 = pipeline.user('Say hello').res()
+        result1 = pipeline.user('Say hello').result()
         assert isinstance(result1, str), "res() should return a string"
         assert len(pipeline.chat_msgs) == 1, f"History should only have system msg, got {len(pipeline.chat_msgs)}"
         assert pipeline.chat_msgs[0]['role'] == 'system', "Should keep system prompt"
@@ -113,8 +113,8 @@ class TestPipelineMode:
         pipeline = LLM(v=False, max_tokens=100)
         pipeline.sys('You are a helpful assistant. Keep responses brief.')
 
-        pipeline.user('Say hello').res()
-        result2 = pipeline.user('Say goodbye').res()
+        pipeline.user('Say hello').result()
+        result2 = pipeline.user('Say goodbye').result()
 
         assert isinstance(result2, str), "Second res() should also return a string"
         assert len(pipeline.chat_msgs) == 1, "History should still only have system msg"
@@ -145,7 +145,7 @@ class TestMultiFollowupChains:
         llm.queue('Make it shorter.')
         llm.queue('Now make it one sentence.')
 
-        result = llm.user('Explain photosynthesis').res()
+        result = llm.user('Explain photosynthesis').result()
 
         assert llm.prompt_queue_remaining == 2, "prompt_queue_remaining should reset after res()"
         assert len(llm.prompt_queue) == 2, "prompt_queue list should be preserved"
@@ -321,45 +321,6 @@ class TestMarkdownExport:
             os.unlink(temp_path)
 
 
-class TestMethodAliases:
-    """Test that method aliases work correctly."""
-
-    def test_sys_aliases(self):
-        """Test sys aliases."""
-        llm = LLM(v=False)
-        assert llm.sys == llm.s == llm.system, "sys aliases should be equal"
-
-    def test_user_aliases(self):
-        """Test user aliases."""
-        llm = LLM(v=False)
-        assert llm.user == llm.u == llm.usr, "user aliases should be equal"
-
-    def test_asst_aliases(self):
-        """Test asst aliases."""
-        llm = LLM(v=False)
-        assert llm.asst == llm.a == llm.asssistant, "asst aliases should be equal"
-
-    def test_chat_aliases(self):
-        """Test chat aliases."""
-        llm = LLM(v=False)
-        assert llm.chat == llm.c == llm.ch, "chat aliases should be equal"
-
-    def test_result_aliases(self):
-        """Test result aliases."""
-        llm = LLM(v=False)
-        assert llm.result == llm.r == llm.res, "result aliases should be equal"
-
-    def test_result_json_aliases(self):
-        """Test result_json aliases."""
-        llm = LLM(v=False)
-        assert llm.result_json == llm.rjson == llm.res_json, "result_json aliases should be equal"
-
-    def test_last_aliases(self):
-        """Test last aliases."""
-        llm = LLM(v=False)
-        assert llm.last == llm.msg == llm.last_msg, "last aliases should be equal"
-
-
 class TestMethodChaining:
     """Test fluent API method chaining."""
 
@@ -498,12 +459,6 @@ class TestRunBatch:
         assert all(isinstance(r, dict) for r in results)
         assert all("language" in r for r in results)
 
-    def test_batch_run_alias(self):
-        """Test batch_run backward compat alias."""
-        llm = LLM(v=False)
-        assert llm.batch_run == llm.run_batch
-        assert llm.batch_run_json == llm.run_batch
-
 
 class TestTemplateInterpolation:
     """Test that template interpolation handles JSON braces safely."""
@@ -578,13 +533,6 @@ class TestRunUnified:
         msg_count_before = len(llm.chat_msgs)
         llm.run(x="test")
         assert len(llm.chat_msgs) == msg_count_before
-
-    def test_result_json_is_run(self):
-        """Test result_json/res_json/rjson all point to run."""
-        llm = LLM(v=False)
-        assert llm.result_json == llm.run
-        assert llm.res_json == llm.run
-        assert llm.rjson == llm.run
 
 
 if __name__ == "__main__":

@@ -180,7 +180,7 @@ Rank any set of LLM outputs. Uses position-swap bias mitigation, auto-generated 
 from spaceshift import LLM, pairwise_evaluate
 
 # Generate responses however you want, then evaluate
-responses = [LLM(model=m).user("Explain dark matter").res() for m in [1, 2, 3]]
+responses = [LLM(model=m).user("Explain dark matter").result() for m in [1, 2, 3]]
 
 result = pairwise_evaluate(
     results=responses,

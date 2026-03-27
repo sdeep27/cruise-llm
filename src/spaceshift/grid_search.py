@@ -140,7 +140,7 @@ def grid_search(
         if search:
             kwargs["search"] = True
         llm = LLM(**kwargs)
-        return cell_idx, llm.user(all_prompts[t_idx]).res()
+        return cell_idx, llm.user(all_prompts[t_idx]).result()
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = {pool.submit(_run_cell, i): i for i in range(len(cells))}

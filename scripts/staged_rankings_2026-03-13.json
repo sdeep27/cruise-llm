@@ -84,10 +84,6 @@
       "reasoning_effort": "high"
     },
     {
-      "model": "together_ai/moonshotai/Kimi-K2-Thinking",
-      "reasoning_effort": "default"
-    },
-    {
       "model": "o3-pro"
     },
     {
@@ -174,7 +170,7 @@
       "model": "o1-pro"
     },
     {
-      "model": "gemini/gemini-2.5-flash-preview-09-2025",
+      "model": "gemini/gemini-3-flash-preview-preview-09-2025",
       "reasoning_effort": "default"
     },
     {
@@ -198,11 +194,11 @@
       "reasoning_effort": "default"
     },
     {
-      "model": "gemini/gemini-2.5-flash",
+      "model": "gemini/gemini-3-flash-preview",
       "reasoning_effort": "default"
     },
     {
-      "model": "gemini/gemini-2.5-flash-lite-preview-09-2025"
+      "model": "gemini/gemini-3.1-flash-lite-preview"
     },
     {
       "model": "gpt-4o-2024-08-06"
@@ -244,7 +240,7 @@
       "model": "gpt-4"
     },
     {
-      "model": "gemini/gemini-2.5-flash-lite"
+      "model": "gemini/gemini-3.1-flash-lite-preview"
     },
     {
       "model": "gpt-4o-mini"
@@ -280,9 +276,6 @@
       "model": "together_ai/nim/mistralai/mixtral-8x7b-instruct-v01"
     },
     {
-      "model": "together_ai/mistralai/Mistral-7B-Instruct-v0.3"
-    },
-    {
       "model": "together_ai/google/gemma-3-4b-it"
     },
     {
@@ -291,7 +284,7 @@
   ],
   "fast": [
     {
-      "model": "gemini/gemini-2.5-flash-lite"
+      "model": "gemini/gemini-3.1-flash-lite-preview"
     },
     {
       "model": "together_ai/LiquidAI/LFM2-24B-A2B"
@@ -300,10 +293,7 @@
       "model": "together_ai/ServiceNow-AI/Apriel-1.5-15b-Thinker"
     },
     {
-      "model": "gemini/gemini-2.5-flash-lite-preview-09-2025"
-    },
-    {
-      "model": "together_ai/mistralai/Mistral-7B-Instruct-v0.3"
+      "model": "gemini/gemini-3.1-flash-lite-preview"
     },
     {
       "model": "together_ai/openai/gpt-oss-20b",
@@ -317,7 +307,7 @@
       "model": "together_ai/mistralai/Mistral-Small-24B-Instruct-2501"
     },
     {
-      "model": "gemini/gemini-2.5-flash",
+      "model": "gemini/gemini-3-flash-preview",
       "reasoning_effort": "default"
     },
     {
@@ -387,10 +377,6 @@
     },
     {
       "model": "gpt-4.1"
-    },
-    {
-      "model": "together_ai/moonshotai/Kimi-K2-Thinking",
-      "reasoning_effort": "default"
     },
     {
       "model": "gpt-4o-2024-08-06"
@@ -603,10 +589,6 @@
       "reasoning_effort": "default"
     },
     {
-      "model": "together_ai/moonshotai/Kimi-K2-Thinking",
-      "reasoning_effort": "default"
-    },
-    {
       "model": "gemini/gemini-3-flash-preview",
       "reasoning_effort": "default"
     },
@@ -745,14 +727,14 @@
       "model": "xai/grok-4-fast-non-reasoning"
     },
     {
-      "model": "gemini/gemini-2.5-flash-lite-preview-09-2025"
+      "model": "gemini/gemini-3.1-flash-lite-preview"
     },
     {
       "model": "claude-opus-4-5",
       "reasoning_effort": "default"
     },
     {
-      "model": "gemini/gemini-2.5-flash",
+      "model": "gemini/gemini-3-flash-preview",
       "reasoning_effort": "default"
     },
     {
@@ -792,11 +774,7 @@
       "reasoning_effort": "default"
     },
     {
-      "model": "gemini/gemini-2.5-flash-lite"
-    },
-    {
-      "model": "together_ai/moonshotai/Kimi-K2-Thinking",
-      "reasoning_effort": "default"
+      "model": "gemini/gemini-3.1-flash-lite-preview"
     },
     {
       "model": "claude-4-sonnet-20250514",
@@ -912,9 +890,6 @@
       "reasoning_effort": "default"
     },
     {
-      "model": "together_ai/mistralai/Mistral-7B-Instruct-v0.3"
-    },
-    {
       "model": "claude-3-7-sonnet-20250219",
       "reasoning_effort": "default"
     },
@@ -926,7 +901,7 @@
       "model": "o1-pro"
     },
     {
-      "model": "gemini/gemini-2.5-flash-preview-09-2025",
+      "model": "gemini/gemini-3-flash-preview-preview-09-2025",
       "reasoning_effort": "default"
     },
     {
@@ -996,10 +971,6 @@
       "reasoning_effort": "default"
     },
     {
-      "model": "together_ai/moonshotai/Kimi-K2-Thinking",
-      "reasoning_effort": "default"
-    },
-    {
       "model": "together_ai/Qwen/Qwen3-235B-A22B-Thinking-2507",
       "reasoning_effort": "default"
     },
@@ -1058,9 +1029,6 @@
     },
     {
       "model": "together_ai/nim/mistralai/mixtral-8x7b-instruct-v01"
-    },
-    {
-      "model": "together_ai/mistralai/Mistral-7B-Instruct-v0.3"
     },
     {
       "model": "together_ai/google/gemma-3-4b-it"

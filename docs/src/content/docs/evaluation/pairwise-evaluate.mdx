@@ -8,7 +8,7 @@ Rank any set of LLM outputs using pairwise comparison with built-in bias mitigat
 ```python
 from spaceshift import LLM, pairwise_evaluate
 
-responses = [LLM(model=m).user("Explain dark matter").res() for m in [1, 2, 3]]
+responses = [LLM(model=m).user("Explain dark matter").result() for m in [1, 2, 3]]
 
 result = pairwise_evaluate(
     results=responses,

@@ -2,74 +2,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .LLM import LLM
 
 
-def subprompt(prompt, n=[5], model=1, search="auto", concurrency=5, v=True):
-    """
-    Recursively decompose a prompt into smaller subprompts across multiple levels.
-
-    Each level splits every prompt from the previous level into n[level] subprompts,
-    processed in parallel via run_batch. Returns the final level as a flat list of
-    dicts with lineage metadata.
-
-    Args:
-        prompt (str): The original prompt to decompose.
-        n (int | list[int]): Number of subprompts per split at each level.
-            int treated as [int]. e.g. [4,4,4] = 3 levels, 4 splits each.
-        model: Model identifier passed to LLM(). Defaults to 1 (best1).
-        search (bool): Enable web search for grounded decomposition.
-        concurrency (int): Max parallel API calls per level. Defaults to 5.
-
-    Returns:
-        list[dict]: Flat list of final-level subprompts, each with:
-            - "prompt": the subprompt text
-            - "depth": the level index that produced it
-            - "parent": the parent prompt text it was split from
-    """
-    search = _resolve_search_auto(search, model, v=v)
-
-    if isinstance(n, int):
-        n = [n]
-
-    current = [{"prompt": prompt, "depth": -1, "parent": None}]
-
-    for depth, num_splits in enumerate(n):
-        system_prompt = (
-            f"You are a prompt decomposition expert. Given a prompt, break it down into "
-            f"exactly {num_splits} smaller subprompts that together decompose the "
-            f"scope of the original prompt.\n\n"
-            f"Each subprompt is on its own, with no awareness of or reference to the original prompt."
-            f"Each subprompt should match the syntax, tone, and approximate length of the original prompt.\n\n"
-            f'Return JSON with key:\n- "subprompts": an array of exactly {num_splits} strings, '
-            f"each being a subprompt"
-        )
-
-        user_msg = "Prompt = {prompt}"
-        if search:
-            user_msg += "</end_prompt> \n Options = Search for up-to-date, current information to generate the prompts"
-
-        llm = LLM(model=model, search=search, v=False).sys(system_prompt).user(user_msg)
-
-        if v:
-            print(f"[Level {depth}] Splitting {len(current)} prompt(s):")
-            for i, entry in enumerate(current):
-                print(f"  [{depth}:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
-
-        inputs = [{"prompt": entry["prompt"]} for entry in current]
-        results = llm.run_batch(inputs, concurrency=concurrency)
-
-        next_level = []
-        for parent_entry, result in zip(current, results):
-            for sp in result["subprompts"]:
-                next_level.append({"prompt": sp, "depth": depth, "parent": parent_entry["prompt"]})
-
-        current = next_level
-
-    if v:
-        print(f"[Result] {len(current)} final prompt(s):")
-        for i, entry in enumerate(current):
-            print(f"  [R:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
-
-    return current
-
+_SUBPROMPT_SYSTEM_FN = lambda n: (
+    f"You are a prompt decomposition expert. Given a prompt, break it down into "
+    f"exactly {n} smaller subprompts that together decompose the "
+    f"scope of the original prompt.\n\n"
+    f"Each subprompt is on its own, with no awareness of or reference to the original prompt."
+    f"Each subprompt should match the syntax, tone, and approximate length of the original prompt.\n\n"
+    f'Return JSON with key:\n- "subprompts": an array of exactly {n} strings, '
+    f"each being a subprompt"
+)
 
 _SUPERPROMPT_SYSTEM = (
     "You are a super-prompter. Given a prompt, you infer plausible parent prompts "
@@ -110,117 +51,96 @@ _SIBLING_SYSTEM = (
 )
 
 
+def _expand_loop(prompt, n, model, search, concurrency, v,
+                 system_prompt_fn, user_template, output_key, label):
+    """Shared expansion loop for subprompt/superprompt/sideprompt.
+    Expects search to already be resolved (True/False), not "auto".
+    """
+    if isinstance(n, int):
+        n = [n]
+    current = [{"prompt": prompt, "depth": -1, "parent": None}]
+    for depth, num_splits in enumerate(n):
+        sys_prompt = system_prompt_fn(num_splits)
+        llm = LLM(model=model, search=search, v=False).sys(sys_prompt).user(user_template)
+        if v:
+            print(f"[Level {depth}] {label} {len(current)} prompt(s):")
+            for i, entry in enumerate(current):
+                print(f"  [{depth}:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
+        inputs = [{"prompt": entry["prompt"], "n": num_splits} for entry in current]
+        results = llm.run_batch(inputs, concurrency=concurrency)
+        next_level = []
+        for parent_entry, result in zip(current, results):
+            for sp in result[output_key]:
+                next_level.append({"prompt": sp, "depth": depth, "parent": parent_entry["prompt"]})
+        current = next_level
+    if v:
+        print(f"[Result] {len(current)} final prompt(s):")
+        for i, entry in enumerate(current):
+            print(f"  [R:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
+    return current
+
+
+def subprompt(prompt, n=[5], model=1, search="auto", concurrency=5, v=True):
+    """
+    Recursively decompose a prompt into smaller subprompts across multiple levels.
+
+    Args:
+        prompt (str): The original prompt to decompose.
+        n (int | list[int]): Number of subprompts per split at each level.
+        model: Model identifier passed to LLM(). Defaults to 1 (best1).
+        search: Enable web search. "auto" enables if model supports it.
+        concurrency (int): Max parallel API calls per level. Defaults to 5.
+
+    Returns:
+        list[dict]: Each with "prompt", "depth", "parent".
+    """
+    search = _resolve_search_auto(search, model, v=v)
+    user_msg = "Prompt = {prompt}"
+    if search:
+        user_msg += "</end_prompt> \n Options = Search for up-to-date, current information to generate the prompts"
+    return _expand_loop(prompt, n, model, search, concurrency, v,
+                        _SUBPROMPT_SYSTEM_FN, user_msg, "subprompts", "Splitting")
+
+
 def superprompt(prompt, n=[3], model=1, search="auto", concurrency=5, v=True):
     """
-    Iteratively generate parent/super prompts — prompts one level up in abstraction.
-
-    Each level takes every prompt from the previous level and generates n[level]
-    superprompts for it, climbing the abstraction ladder.
+    Generate parent/super prompts — prompts one level up in abstraction.
 
     Args:
         prompt (str): The original prompt to find parents for.
         n (int | list[int]): Number of superprompts per prompt at each level.
-            int treated as [int]. e.g. [3, 2] = level 0 generates 3, level 1
-            generates 2 per each of those 3 (6 total).
         model: Model identifier passed to LLM(). Defaults to 1.
-        search (bool): Enable web search for grounded generation.
+        search: Enable web search. "auto" enables if model supports it.
         concurrency (int): Max parallel API calls per level. Defaults to 5.
 
     Returns:
-        list[dict]: Flat list of final-level superprompts, each with:
-            - "prompt": the superprompt text
-            - "depth": the level index that produced it
-            - "parent": the prompt it was generated from
+        list[dict]: Each with "prompt", "depth", "parent".
     """
     search = _resolve_search_auto(search, model, v=v)
-
-    if isinstance(n, int):
-        n = [n]
-
-    current = [{"prompt": prompt, "depth": -1, "parent": None}]
-
-    for depth, num_splits in enumerate(n):
-        llm = LLM(model=model, search=search, v=False).sys(_SUPERPROMPT_SYSTEM).user("{prompt}\n\nn={n}")
-
-        if v:
-            print(f"[Level {depth}] Generating {num_splits} superprompt(s) for {len(current)} prompt(s):")
-            for i, entry in enumerate(current):
-                print(f"  [{depth}:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
-
-        inputs = [{"prompt": entry["prompt"], "n": num_splits} for entry in current]
-        results = llm.run_batch(inputs, concurrency=concurrency)
-
-        next_level = []
-        for parent_entry, result in zip(current, results):
-            for sp in result["superprompts"]:
-                next_level.append({"prompt": sp, "depth": depth, "parent": parent_entry["prompt"]})
-
-        current = next_level
-
-    if v:
-        print(f"[Result] {len(current)} final superprompt(s):")
-        for i, entry in enumerate(current):
-            print(f"  [R:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
-
-    return current
+    return _expand_loop(prompt, n, model, search, concurrency, v,
+                        lambda _: _SUPERPROMPT_SYSTEM, "{prompt}\n\nn={n}",
+                        "superprompts", "Generating superprompt(s) for")
 
 
 def sideprompt(prompt, n=[4], model=1, search="auto", concurrency=5, v=True):
     """
-    Iteratively generate side prompts — prompts at the same abstraction level
-    exploring different perspectives.
-
-    Each level takes every prompt from the previous level and generates n[level]
-    side prompts for it, expanding laterally.
+    Generate side prompts — prompts at the same abstraction level exploring different perspectives.
 
     Args:
         prompt (str): The original prompt to find lateral alternatives for.
         n (int | list[int]): Number of side prompts per prompt at each level.
-            int treated as [int]. e.g. [4, 3] = level 0 generates 4 side prompts,
-            level 1 generates 3 per each of those 4 (12 total).
         model: Model identifier passed to LLM(). Defaults to 1.
-        search (bool): Enable web search for grounded generation.
+        search: Enable web search. "auto" enables if model supports it.
         concurrency (int): Max parallel API calls per level. Defaults to 5.
 
     Returns:
-        list[dict]: Flat list of final-level side prompts, each with:
-            - "prompt": the side prompt text
-            - "depth": the level index that produced it
-            - "parent": the prompt it was generated from
+        list[dict]: Each with "prompt", "depth", "parent".
     """
     search = _resolve_search_auto(search, model, v=v)
-
-    if isinstance(n, int):
-        n = [n]
-
-    current = [{"prompt": prompt, "depth": -1, "parent": None}]
-
-    for depth, num_splits in enumerate(n):
-        llm = LLM(model=model, search=search, v=False).sys(_SIBLING_SYSTEM).user(
-            "Original Prompt: {prompt}\n\nGenerate exactly {n} sibling prompts."
-        )
-
-        if v:
-            print(f"[Level {depth}] Generating {num_splits} sideprompt(s) for {len(current)} prompt(s):")
-            for i, entry in enumerate(current):
-                print(f"  [{depth}:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
-
-        inputs = [{"prompt": entry["prompt"], "n": num_splits} for entry in current]
-        results = llm.run_batch(inputs, concurrency=concurrency)
-
-        next_level = []
-        for parent_entry, result in zip(current, results):
-            for sp in result["sibling_prompts"]:
-                next_level.append({"prompt": sp, "depth": depth, "parent": parent_entry["prompt"]})
-
-        current = next_level
-
-    if v:
-        print(f"[Result] {len(current)} final sideprompt(s):")
-        for i, entry in enumerate(current):
-            print(f"  [R:{i}] {entry['prompt'][:90]}{'...' if len(entry['prompt']) > 90 else ''}")
-
-    return current
+    return _expand_loop(prompt, n, model, search, concurrency, v,
+                        lambda _: _SIBLING_SYSTEM,
+                        "Original Prompt: {prompt}\n\nGenerate exactly {n} sibling prompts.",
+                        "sibling_prompts", "Generating sideprompt(s) for")
 
 
 # --- prompt_tree internals ---

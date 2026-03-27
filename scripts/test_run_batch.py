@@ -34,9 +34,8 @@ for model in models:
         except Exception as e:
             print(f"  {label}: FAILED - {e}")
 
-    # Also verify backward compat alias works
     llm2 = LLM(model=model).sys("Return JSON with key 'test': 'ok'").user("{x}")
-    r = llm2.batch_run([{"x": "hi"}])
-    print(f"  batch_run alias: {r}")
+    r = llm2.run_batch([{"x": "hi"}])
+    print(f"  run_batch: {r}")
 
 print("\nAll tests complete.")

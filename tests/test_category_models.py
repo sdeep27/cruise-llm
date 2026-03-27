@@ -55,7 +55,7 @@ def test_model_inference():
         try:
             print(f"\n{model_spec}:")
             llm = LLM(model=model_spec, stream=False, v=False, max_tokens=50)
-            result = llm.user(test_prompt).res()
+            result = llm.user(test_prompt).result()
             print(f"  Model: {llm.model}")
             print(f"  Response: {result.strip()[:100]}")
             print(f"  Cost: ${llm.last_cost(warn=False):.6f}")

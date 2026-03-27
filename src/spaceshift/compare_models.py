@@ -181,7 +181,7 @@ def compare_models(prompt, models=None, metrics=None, evaluate=True, search=Fals
         if search:
             kwargs["search"] = True
         llm = LLM(**kwargs)
-        return idx, llm.user(prompt).res()
+        return idx, llm.user(prompt).result()
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = {pool.submit(run_model, i): i for i in range(len(models))}

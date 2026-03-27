@@ -577,6 +577,31 @@ def main():
         if trivial_unmapped:
             print(f"  ({trivial_unmapped} more unmapped slugs outside top 50)")
 
+    # --- Substitute deprecated models ---
+    DEPRECATED_MODELS = {
+        "gemini/gemini-2.5-flash-lite-preview-09-2025": "gemini/gemini-3.1-flash-lite-preview",
+        "gemini/gemini-2.5-flash-lite": "gemini/gemini-3.1-flash-lite-preview",
+        "gemini/gemini-2.5-flash": "gemini/gemini-3-flash-preview",
+        "together_ai/mistralai/Mistral-7B-Instruct-v0.3": None,  # removed, non-serverless
+        "together_ai/moonshotai/Kimi-K2-Thinking": None,  # removed, non-serverless
+    }
+    subs_count = 0
+    for cat in list(rankings.keys()):
+        new_entries = []
+        for entry in rankings[cat]:
+            m = entry["model"]
+            if m in DEPRECATED_MODELS:
+                replacement = DEPRECATED_MODELS[m]
+                if replacement is None:
+                    subs_count += 1
+                    continue  # drop model entirely
+                entry["model"] = replacement
+                subs_count += 1
+            new_entries.append(entry)
+        rankings[cat] = new_entries
+    if subs_count:
+        print(f"\nSubstituted/removed {subs_count} deprecated model entries")
+
     # --- Validate against litellm ---
     print("\nValidating mapped models against litellm...")
     rankings, invalid = validate_models(rankings, available_set)

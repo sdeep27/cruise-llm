@@ -144,8 +144,8 @@ _AUDIO_FORMAT_MAP = {
 # litellm hasn't caught up with audio support flags for these yet
 _AUDIO_INPUT_OVERRIDES = {
     "gemini/gemini-3-flash-preview",
-    "gemini/gemini-2.5-flash",
-    "gemini/gemini-2.5-flash-lite",
+    "gemini/gemini-3-flash-preview",
+    "gemini/gemini-3.1-flash-lite-preview",
 }
 
 _WEB_SEARCH_OVERRIDES = {
@@ -320,7 +320,7 @@ class LLM:
 
     def _enforce_json(self, text):
         """Use LLM to fix malformed JSON. Returns parsed dict or {} on failure."""
-        enforcer = LLM(model="fast", stream=False, v=False) \
+        enforcer = LLM(model="fast1", stream=False, v=False) \
             .sys('You are a JSON enforcer. The user will provide text that should be valid JSON but may have issues. Return ONLY valid JSON that can be parsed by json.loads. Fix any syntax errors, missing brackets, or malformed structures. Output nothing except the corrected JSON.') \
             .user('{text}')
         return enforcer.run(text=text, enforce=False)
@@ -479,8 +479,6 @@ class LLM:
         self._run_prediction(**kwargs)
         return self
 
-    c = ch = chat
-
     def chat_json(self, **kwargs) -> LLM:
         """
         Same as `chat()`, but enforces JSON mode on the model response.
@@ -491,8 +489,6 @@ class LLM:
         self._run_prediction(jsn_mode=True, **kwargs)
         return self
     
-    cjson = c_json = ch_json = chat_json
-
     def result(self, **kwargs) -> str:
         """
         Run the prediction, return the response text, and reset the chat history
@@ -512,8 +508,6 @@ class LLM:
         self._reset_msgs()
         return last_res
     
-    r = res = result
-
     def _interpolate_templates(self, **kwargs):
         """
         Interpolate {placeholder} template variables in all chat messages.
@@ -639,8 +633,6 @@ class LLM:
         self.chat_msgs = saved_msgs
         return result
 
-    run_json = run
-
     def res_json(self, enforce=True, **kwargs) -> dict:
         """
         Run the prediction in JSON mode and return parsed JSON, without template interpolation.
@@ -660,8 +652,6 @@ class LLM:
         result = self._parse_json(self.last(), enforce)
         self.chat_msgs = saved_msgs
         return result
-
-    result_json = rjson = res_json
 
     def _clone_for_batch(self) -> LLM:
         """Create an isolated LLM copy for batch execution (shares no mutable state)."""
@@ -742,9 +732,6 @@ class LLM:
 
         return results
 
-    batch_run = run_batch
-    batch_run_json = run_batch
-
     def result_batch(self, prompts, concurrency=5, return_errors=False, **kwargs) -> list[str]:
         """
         Run a list of prompts concurrently, returning plain text responses.
@@ -788,8 +775,6 @@ class LLM:
             print(f"result_batch: {len(prompts)} calls, total cost: ${total:.6f}")
 
         return results
-
-    r_batch = res_batch = result_batch
 
     def last_json(self, enforce=True) -> dict:
         """Parse the last assistant response as JSON, stripping markdown fences if present."""
@@ -946,7 +931,6 @@ class LLM:
 
         return [_get_model_name(entry) for entry in entries[:top_n]]
 
-    get_models_category = get_models_for_category
 
     def _run_responses_search(self, args, jsn_mode=False):
         """Handle search via the Responses API (OpenAI, xAI, and other providers that don't support web_search_options in chat completions)."""
@@ -1045,26 +1029,22 @@ class LLM:
             chat_args["parallel_tool_calls"] = self.parallel_tool_calls
 
         if self.reasoning_enabled:
-            if 'grok' in model_lower and 'reasoning' in model_lower:
-                pass
-            elif model_lower.startswith('together_ai/'):
-                pass
-            elif self.reasoning_effort == 'default':
-                pass
-            else:
+            skip_reasoning = (
+                ('grok' in model_lower and 'reasoning' in model_lower)
+                or model_lower.startswith('together_ai/')
+                or self.reasoning_effort == 'default'
+            )
+            if not skip_reasoning:
                 chat_args['reasoning_effort'] = self.reasoning_effort
-        else:
-            if "gemini-3" in self.model:
-                chat_args['reasoning_effort'] = "minimal"
-        if self.search_enabled:
-            if model_lower.startswith('together_ai/'):
-                pass
-            else:
-                chat_args["web_search_options"] = {
-                    "search_context_size": self.search_context_size
-                }
+        elif "gemini-3" in self.model:
+            chat_args['reasoning_effort'] = "minimal"
 
-        if jsn_mode:
+        if self.search_enabled and not model_lower.startswith('together_ai/'):
+            chat_args["web_search_options"] = {
+                "search_context_size": self.search_context_size
+            }
+
+        if jsn_mode and not self.available_tools:
             chat_args["response_format"] = {"type": "json_object"}
         if args['v']: print(f"Requesting {args['model']}")
         comp = completion(**chat_args)
@@ -1224,8 +1204,6 @@ class LLM:
                 aud_count = 1 if isinstance(audio, str) else len(audio)
                 print(f"[{aud_count} audio file(s) attached]\n")
         return self
-    
-    u = usr = user
 
     def transcribe(self, audio, model=None):
         """
@@ -1301,8 +1279,6 @@ class LLM:
         else:
             self.chat_msgs.append({"role": "assistant", "content": prompt_response})
         return self
-    
-    a = assistant = asssistant = asst
 
     def sys(self, prompt, append=True) -> LLM:
         """
@@ -1335,8 +1311,6 @@ class LLM:
             print(f"{prompt}\n")
         return self
 
-    system = s = sys
-
     def last(self) -> str | None:
         """
         Retrieve the content of the most recent Assistant message.
@@ -1348,8 +1322,6 @@ class LLM:
         for msg in reversed(self.chat_msgs):
             if msg['role'] == 'assistant':
                 return msg['content']
-
-    msg = last_msg = last
 
     def last_cost(self, warn=True) -> float | None:
         """Return the cost of the most recent completion, or None if no costs tracked."""
@@ -1598,8 +1570,6 @@ class LLM:
         self.prompt_queue_remaining += 1
         return self
 
-    followup = then = queue 
-
     def fwd(self, fwd_llm, instructions='') -> LLM:
         """
         Forward the last response from this LLM to another LLM instance.
@@ -1749,21 +1719,16 @@ class LLM:
             models = [m for m in models if model_str in m]
         return models
 
-    def models_with_search(self, model_str=None):
-        possible_models = self.get_models(model_str)
-        return [model for model in possible_models if model in _WEB_SEARCH_OVERRIDES or litellm.supports_web_search(model=model) == True]
-
-    def models_with_reasoning(self, model_str=None):
-        possible_models = self.get_models(model_str)
-        return [model for model in possible_models if litellm.supports_reasoning(model=model) == True]
-
-    def models_with_vision(self, model_str=None):
-        possible_models = self.get_models(model_str)
-        return [model for model in possible_models if litellm.supports_vision(model=model) == True]
-
-    def models_with_audio_input(self, model_str=None):
-        possible_models = self.get_models(model_str)
-        return [model for model in possible_models if litellm.supports_audio_input(model=model) == True]
+    def models_with(self, capability, model_str=None):
+        """Filter available models by capability: 'search', 'reasoning', 'vision', or 'audio_input'."""
+        checks = {
+            "search": self._has_search,
+            "reasoning": self._has_reasoning,
+            "vision": self._has_vision,
+            "audio_input": self._has_audio_input,
+        }
+        check = checks[capability]
+        return [m for m in self.get_models(model_str) if check(m)]
 
     def to_md(self, filename):
         """Export the chat history to a Markdown file."""
