@@ -8,9 +8,8 @@ Force the model to return valid JSON.
 ```python
 from spaceshift import LLM
 
-llm = LLM().sys("Return JSON with keys: name, age").user("Alice is 30")
-result = llm.chat(json=True)
-print(llm.last_json())  # {"name": "Alice", "age": 30}
+result = LLM().sys("Return JSON with keys: name, age").user("Alice is 30").result_json()
+print(result)  # {"name": "Alice", "age": 30}
 ```
 
 ## Outline

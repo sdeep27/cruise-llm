@@ -770,10 +770,6 @@ class LLM:
             "result_batch",
         )
 
-    def last_json(self, enforce=True) -> dict:
-        """Parse the last assistant response as JSON, stripping markdown fences if present."""
-        return self._parse_json(self.last(), enforce)
-
     def _check_model(self, inputted_model):
         if not self.sub_closest_model:
             return inputted_model

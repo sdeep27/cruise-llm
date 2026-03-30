@@ -152,7 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deterministic model selection**: Use `best0`, `fast1`, `cheap2` etc. to select exact rank
 - **Auto reasoning effort**: Rankings now include `reasoning_effort` metadata, auto-applied when selecting category models
 - **Vision support**: Auto-switches to vision-capable model when images are attached
-- **`last_json()`**: Parse last response as JSON (for use after `chat(json=True)`)
+- **`result_json()`**: Run in JSON mode, return parsed dict, reset history
 - **`models_with_vision()`**: List models with vision support
 
 ### Changed
