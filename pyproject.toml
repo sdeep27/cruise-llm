@@ -4,24 +4,27 @@ build-backend = "hatchling.build"
 
 [project]
 name = "spaceshift"
-version = "1.1.0"
-description = "An open research toolkit powered by LLMs. Branch into questions through tree structures, navigate the full space of perspectives, and grid-search evaluate across prompts and models to find what works best."
+version = "1.1.1"
+description = "Interactive CLI research toolkit powered by LLMs. Branch into questions through tree structures, navigate perspectives, compare models, and explore the full space of possible answers."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
     { name = "Deep Pulusani", email = "deep.pulusani@gmail.com" },
 ]
-keywords = ["llm", "prompt-engineering", "prompt-optimization", "ai", "evaluation", "openai", "anthropic", "litellm"]
+keywords = ["cli", "research", "llm", "ai", "prompt-engineering", "evaluation", "interactive", "openai", "anthropic"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Environment :: Console",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "litellm",
