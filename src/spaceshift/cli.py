@@ -607,15 +607,50 @@ def _interactive_main():
 
             from .prompt_probe import list_transforms
             all_transforms = list_transforms(v=False)
+
+            _TRANSFORM_HINTS = {
+                "inverse": "Invert syntax/perspective, preserve meaning",
+                "abstract_up": "One level more general",
+                "abstract_down": "One level more specific",
+                "abstract_up3": "Three levels more general",
+                "abstract_down3": "Three levels more specific",
+                "active_up": "More active, direct, and passionate",
+                "passive_up": "More passive, detached, and timeless",
+                "reflection": "Mirror/flip across a meaningful axis",
+                "rotation": "Rotate perspective or framing",
+                "shear": "Skew one dimension while fixing another",
+                "scaling": "Amplify scope and intensity",
+                "recursion": "Apply the prompt to itself",
+                "dimension_up": "Elevate by one level of dimensionality",
+                "dimension_down": "Collapse by one level of dimensionality",
+                "improve_naive": "Straightforward prompt improvement",
+                "user_profile": "Add a first-person persona/context",
+                "double": "Duplicate the prompt (deterministic)",
+                "translate_chinese": "Translate to Chinese",
+                "translate_korean": "Translate to Korean",
+                "translate_hindi": "Translate to Hindi",
+                "translate_french": "Translate to French",
+                "translate_arabic": "Translate to Arabic",
+            }
+
             selected = questionary.checkbox(
                 "Select transforms to apply:",
-                choices=[questionary.Choice(name, checked=True) for name in all_transforms],
+                choices=[
+                    questionary.Choice(
+                        f"{name:<20} {_TRANSFORM_HINTS.get(name, '')}",
+                        value=name,
+                        checked=True,
+                    )
+                    for name in all_transforms
+                ],
             ).ask()
             if selected is None:
                 continue
             if not selected:
                 console.print("[yellow]No transforms selected.[/yellow]\n")
                 continue
+
+            console.print(f"\n  [bold]{len(selected)}[/bold] of {len(all_transforms)} transforms selected\n")
 
             console.print("\n[bold]Select manipulation model[/bold] (for transforming prompts):")
             model = _select_model(None)
