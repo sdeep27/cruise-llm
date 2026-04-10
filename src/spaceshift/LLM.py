@@ -325,7 +325,8 @@ class LLM:
             'JSON wrapped in markdown or explanation, or a natural-language response that should have been JSON.'
         ]
         if context:
-            sys_parts.append(f'The original task was: "{context}". Use this to reconstruct the expected JSON if needed.')
+            escaped = context.replace('{', '{{').replace('}', '}}')
+            sys_parts.append(f'The original task was: "{escaped}". Use this to reconstruct the expected JSON if needed.')
         sys_parts.append('Return ONLY valid JSON. No explanation, no markdown.')
         enforcer = LLM(model="claude-haiku-4-5", stream=False, v=False) \
             .sys(' '.join(sys_parts)) \
