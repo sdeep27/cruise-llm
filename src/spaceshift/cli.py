@@ -332,201 +332,190 @@ def _select_model(model_arg):
     return answer
 
 
+def _build_tree_dict(prompt, agent_result):
+    """Convert agent's flat {subprompts, superprompts, sideprompts} to prompt_tree format."""
+    tree = {"prompt": prompt}
+    for direction, key in [("sub", "subprompts"), ("super", "superprompts"), ("side", "sideprompts")]:
+        prompts = agent_result.get(key, [])
+        if prompts:
+            tree[direction] = [
+                {"prompt": p, "depth": 0, "parent": prompt, "id": f"{direction}_{i}", "direction": direction}
+                for i, p in enumerate(prompts)
+            ]
+    return tree
+
+
+def _run_research(prompt, model, save_dir, no_view):
+    """Execute the full research pipeline."""
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
+    from rich.console import Console
+    from .LLM import LLM
+    from .prompt_space import subprompt, superprompt, sideprompt, research_tree
+
+    console = Console()
+
+    # Step 1: Agentic prompt tree generation
+    console.print(f"\n[bold]Building prompt tree...[/bold]")
+
+    def explore_paths(subject: str, sub_n: int = 5, super_n: int = 5, side_n: int = 3) -> dict:
+        """Generate exploration paths for a research subject.
+
+        Args:
+            subject: The topic to explore.
+            sub_n: Number of sub-prompts to generate (drill deeper into specifics).
+            super_n: Number of super-prompts to generate (zoom out to broader context).
+            side_n: Number of side-prompts to generate (lateral/parallel perspectives).
+
+        Returns:
+            dict with subprompts, superprompts, and sideprompts arrays.
+        """
+        console.print(f"  [dim]explore_paths: generating {sub_n} sub, {super_n} super, {side_n} side prompts...[/dim]")
+        subs = subprompt(subject, n=sub_n, model=model, v=False)
+        supers = superprompt(subject, n=super_n, model=model, v=False)
+        sides = sideprompt(subject, n=side_n, model=model, v=False)
+        console.print(f"  [green]Got {len(subs)} sub, {len(supers)} super, {len(sides)} side prompts[/green]")
+        return {"subprompts": subs, "superprompts": supers, "sideprompts": sides}
+
+    agent = LLM(model=model, v=False)
+    agent.tools(fns=[explore_paths], tool_choice="required_then_auto", max_turns=5)
+    agent.sys(
+        "You are a research planner with access to a prompt exploration tool. "
+        "Given a subject, use the explore_paths tool to generate exploration paths, "
+        "then analyze the results and add any paths the tool missed. "
+        "Return your final comprehensive map as JSON with keys: subprompts, superprompts, sideprompts — each an array of prompt strings."
+    )
+    tree_prompts = agent.user(f"Map all exploration paths for: {prompt}").result_json()
+
+    sub_count = len(tree_prompts.get("subprompts", []))
+    super_count = len(tree_prompts.get("superprompts", []))
+    side_count = len(tree_prompts.get("sideprompts", []))
+    console.print(f"  [bold green]Final tree: {sub_count} sub, {super_count} super, {side_count} side prompts[/bold green]\n")
+
+    # Show the prompts
+    for direction, key in [("sub", "subprompts"), ("super", "superprompts"), ("side", "sideprompts")]:
+        prompts = tree_prompts.get(key, [])
+        if prompts:
+            console.print(f"  [bold]{direction}[/bold] ({len(prompts)}):")
+            for p in prompts:
+                console.print(f"    [dim]{p[:90]}{'...' if len(p) > 90 else ''}[/dim]")
+
+    # Step 2: Build tree dict and run research_tree
+    tree_dict = _build_tree_dict(prompt, tree_prompts)
+
+    console.print(f"\n[bold]Generating research outputs...[/bold]")
+    result = research_tree(
+        tree_dict,
+        output_model=model,
+        search="auto",
+        save=save_dir if save_dir else True,
+        v=True,
+    )
+
+    save_path = result.get("saved", [])
+    if save_path:
+        import os
+        output_dir = os.path.dirname(save_path[0]) if save_path else None
+    else:
+        output_dir = None
+
+    total = len(result.get("outputs", []))
+    console.print(f"\n[bold green]Done! {total} research outputs generated.[/bold green]")
+    if output_dir:
+        console.print(f"[dim]Saved to: {output_dir}/[/dim]")
+
+    # Step 3: Post-process research outputs
+    if output_dir:
+        _post_process_research(output_dir, model, verbose=True)
+
+    # Step 4: Open viewer
+    if not no_view and output_dir:
+        console.print(f"\n[bold]Opening viewer...[/bold]\n")
+        view(output_dir)
+
+
+def _post_process_research(output_dir, model, verbose=True):
+    """Post-process research outputs to generate synthesis documents."""
+    from rich.console import Console
+    from .LLM import LLM
+    from .tools import ResearchTools
+
+    console = Console()
+
+    console.print("\n[bold cyan]Post-processing research outputs...[/bold cyan]")
+
+    # Create research tools scoped to output directory
+    rt = ResearchTools(output_dir)
+
+    # Create agent with research tools
+    agent = LLM(model=model, v=verbose)
+    agent.tools(fns=rt.all_tools(), tool_choice="required_then_auto", max_turns=20)
+
+    # Clear deliverables, autonomous approach
+    agent.sys(
+        "You are a research synthesizer. Analyze all research outputs in this directory and create comprehensive synthesis documents.\n\n"
+        "The directory contains markdown files with YAML frontmatter. Each file has metadata like direction (root/sub/super/side), "
+        "depth, prompt, and parent - forming a research tree structure.\n\n"
+        "TOOL USAGE:\n"
+        "- Use read() to read markdown files (read one file at a time)\n"
+        "- Use ls() and find() to discover files\n"
+        "- Use grep() to search file contents\n"
+        "- Use write() to create new synthesis documents\n"
+        "- Use bash() ONLY for text processing (wc, sort, uniq, diff, etc.) - NOT for reading files\n"
+        "- bash() blocks shell operators (&&, ||, ;) for security\n\n"
+        "Create these synthesis documents:\n\n"
+        "1. COMPREHENSIVE REPORT (_REPORT.md) - A long, detailed synthesis:\n"
+        "   - Synthesize ALL findings across the research tree\n"
+        "   - Identify key themes, patterns, and insights\n"
+        "   - Create narrative flow connecting different research nodes\n"
+        "   - Include specific examples and quotes from source files\n"
+        "   - Should be substantial - aim for depth and completeness\n\n"
+        "2. EXECUTIVE SUMMARY (_SUMMARY.md):\n"
+        "   - High-level overview\n"
+        "   - Most important takeaways\n"
+        "   - For someone who wants the essence without details\n\n"
+        "3. GLOSSARY (_GLOSSARY.md):\n"
+        "   - Key terms, concepts, and acronyms from the research\n"
+        "   - Alphabetically organized\n"
+        "   - Brief definitions with context\n\n"
+        "4. THEMATIC INDEX (_THEMES.md):\n"
+        "   - Organize all research files by theme/topic\n"
+        "   - Include markdown links to relevant files\n"
+        "   - Help readers navigate to specific areas of interest\n\n"
+        "All outputs should use markdown with YAML frontmatter."
+    )
+
+    # Execute synthesis
+    agent.user(f"Synthesize the research outputs in {output_dir}.").chat()
+
+    console.print("[bold green]✓ Post-processing complete[/bold green]")
+
+
+def _run_agent(prompt, model, save_dir, no_view):
+    """Execute the autonomous research agent."""
+    from rich.console import Console
+    from .research_agent import research_agent
+
+    console = Console()
+    console.print(f"\n[bold]Starting research agent...[/bold]\n")
+
+    result = research_agent(prompt, model=model, save=save_dir or True, v=True)
+
+    output_dir = result.get("output_dir")
+    if output_dir:
+        console.print(f"\n[dim]Output: {output_dir}/[/dim]")
+    if not no_view and output_dir:
+        console.print(f"\n[bold]Opening viewer...[/bold]\n")
+        view(output_dir)
+
+
 def _prompt_to_slug(prompt, max_len=40):
     """Convert a prompt to a filesystem-safe slug for directory naming."""
     import re
     slug = re.sub(r'[^\w\s-]', '', prompt.lower().strip())
     slug = re.sub(r'[\s_]+', '_', slug)
     return slug[:max_len].rstrip('_')
-
-
-def _calculate_tree_count(n_list):
-    """Total prompts for a direction given its n array. Returns (total, breakdown_str)."""
-    if not n_list:
-        return 0, ""
-    parts = []
-    running = 1
-    total = 0
-    for num in n_list:
-        running *= num
-        parts.append(str(running))
-        total += running
-    return total, " + ".join(parts)
-
-
-def _build_md_tree(nodes, root_prompt, reverse=False):
-    """Build indented dash lines from flat node list using parent references."""
-    children_of = {}
-    for node in nodes:
-        parent = node.get("parent", root_prompt)
-        children_of.setdefault(parent, []).append(node)
-
-    lines = []
-
-    def _recurse(parent_prompt, indent=0):
-        for child in children_of.get(parent_prompt, []):
-            prefix = "  " * indent + "- "
-            lines.append(f"{prefix}{child['prompt']}")
-            _recurse(child["prompt"], indent + 1)
-
-    if reverse:
-        # For super: collect all lines then reverse groups so deepest appears first
-        # Build depth-first, then reverse top-level ordering
-        top_level = children_of.get(root_prompt, [])
-        all_groups = []
-        for top_node in top_level:
-            group_lines = []
-            group_lines.append(f"- {top_node['prompt']}")
-            # Collect children recursively
-            def _collect(parent_prompt, indent=1):
-                for child in children_of.get(parent_prompt, []):
-                    group_lines.append(f"{'  ' * indent}- {child['prompt']}")
-                    _collect(child["prompt"], indent + 1)
-            _collect(top_node["prompt"])
-            all_groups.append(group_lines)
-
-        # Reverse: deepest-rooted groups first
-        # Since super goes UP, depth-0 nodes are closest to root.
-        # We want furthest from root first, but the tree structure has depth-0
-        # as immediate parents of root. With multi-level, depth-0 nodes have
-        # children at depth-1 (more abstract). So we reverse the top-level list
-        # and also show children above parents within each group.
-        for group in reversed(all_groups):
-            lines.extend(group)
-    else:
-        _recurse(root_prompt)
-
-    return lines
-
-
-def _write_tree_md(tree, path, model, sub_n, super_n, side_n, output_model=None):
-    """Write a consolidated tree.md with hierarchical dash formatting."""
-    from datetime import datetime
-
-    if not path.endswith(".md"):
-        path += ".md"
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-
-    prompt = tree["prompt"]
-
-    # Calculate total
-    total = 1  # root
-    for n_list in (sub_n, super_n, side_n):
-        if n_list:
-            count, _ = _calculate_tree_count(n_list)
-            total += count
-
-    # Build frontmatter
-    meta_lines = ["---"]
-    meta_lines.append(f"original_prompt: \"{prompt}\"")
-    meta_lines.append(f"tree_model: {model}")
-    if output_model:
-        meta_lines.append(f"output_model: {output_model}")
-    meta_lines.append(f"date: {datetime.now().strftime('%Y-%m-%d')}")
-    meta_lines.append("directions:")
-    if sub_n:
-        meta_lines.append(f"  sub: {sub_n}")
-    if super_n:
-        meta_lines.append(f"  super: {super_n}")
-    if side_n:
-        meta_lines.append(f"  side: {side_n}")
-    meta_lines.append(f"total_prompts: {total}")
-    meta_lines.append("---")
-
-    lines = meta_lines + [""]
-    lines.append("# Prompt Tree\n")
-    lines.append(f"> **{prompt}**\n")
-
-    # Super section (above root) — deepest/most abstract first
-    if "super" in tree and tree["super"]:
-        lines.append("---\n")
-        lines.append("## Super (above)\n")
-        lines.append("Broader prompts that contain the root as a subtopic.\n")
-        lines.extend(_build_md_tree(tree["super"], prompt, reverse=True))
-        lines.append("")
-
-    # Side section (alongside root)
-    if "side" in tree and tree["side"]:
-        lines.append("---\n")
-        lines.append("## Side (alongside)\n")
-        lines.append("Alternative prompts at the same level of abstraction.\n")
-        lines.extend(_build_md_tree(tree["side"], prompt))
-        lines.append("")
-
-    # Sub section (below root) — closest to root first
-    if "sub" in tree and tree["sub"]:
-        lines.append("---\n")
-        lines.append("## Sub (below)\n")
-        lines.append("Focused subprompts that decompose the root into specifics.\n")
-        lines.extend(_build_md_tree(tree["sub"], prompt))
-        lines.append("")
-
-    with open(path, "w") as f:
-        f.write("\n".join(lines))
-    return path
-
-
-def _run_prompt_tree(prompt, model, sub_n=None, super_n=None, side_n=None,
-                     output_model=None, save_dir=None, concurrency=5):
-    """Execute the prompt tree pipeline."""
-    import warnings
-    warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
-
-    from rich.console import Console
-    from .prompt_space import prompt_tree, research_tree
-
-    console = Console()
-
-    if not save_dir:
-        save_dir = os.path.join("output", _prompt_to_slug(prompt))
-
-    # Show config
-    console.print(f"\n[bold]Building prompt tree...[/bold]")
-    console.print(f"  [dim]Tree model: {model}[/dim]")
-    if output_model:
-        console.print(f"  [dim]Output model: {output_model}[/dim]")
-    console.print(f"  [dim]Output folder: {save_dir}/[/dim]")
-
-    # Phase 1: Build tree
-    tree = prompt_tree(
-        prompt, sub_n=sub_n, super_n=super_n, side_n=side_n,
-        model=model, viz=True, v=True,
-    )
-
-    # Count results
-    total = 1
-    for direction in ("sub", "super", "side"):
-        if direction in tree:
-            total += len(tree[direction])
-    console.print(f"\n[bold green]{total} prompts generated.[/bold green]")
-
-    # Save tree markdown
-    tree_path = os.path.join(save_dir, "tree.md")
-    _write_tree_md(tree, tree_path, model, sub_n, super_n, side_n, output_model=output_model)
-    console.print(f"  [dim]{tree_path}[/dim]")
-
-    # Save graph visualization
-    graph = tree.get("graph")
-    if graph:
-        graph_path = os.path.join(save_dir, "tree")
-        graph.render(graph_path, cleanup=True)
-        console.print(f"  [dim]{graph_path}.svg[/dim]")
-
-    # Phase 2: Generate outputs (if requested)
-    if output_model:
-        console.print(f"\n[bold]Generating outputs for {total} prompts...[/bold]")
-        result = research_tree(
-            tree,
-            output_model=output_model,
-            search="auto",
-            save=save_dir,
-            v=True,
-        )
-        output_count = len(result.get("outputs", []))
-        console.print(f"\n[bold green]{output_count} outputs saved.[/bold green]")
-        saved = result.get("saved", [])
-        if saved:
-            console.print(f"  [dim]{os.path.dirname(saved[0])}/[/dim]")
 
 
 def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
@@ -1040,7 +1029,7 @@ def _interactive_main():
     from rich.console import Console
     console = Console()
 
-    console.print("\n[bold]spaceshift[/bold] [dim]— prompt exploration toolkit[/dim]\n")
+    console.print("\n[bold]spaceshift[/bold] [dim]— open research toolkit[/dim]\n")
 
     # Show current providers
     providers = _get_providers()
@@ -1051,6 +1040,7 @@ def _interactive_main():
         mode = questionary.select(
             "What would you like to do?",
             choices=[
+                Choice("Deep Research", value="research"),
                 Choice("Prompt Manipulate", value="prompt"),
                 Choice("Compare Models", value="compare"),
                 Choice("Grid Search and Evaluation", value="grid"),
@@ -1063,52 +1053,95 @@ def _interactive_main():
         if mode is None:
             break
 
-        if mode == "prompt":
-            prompt = questionary.text(
-                "Enter your prompt:",
-                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
-            ).ask()
-            if prompt is None:
+        if mode == "research":
+            step = 0
+            prompt = model = None
+            while step >= 0:
+                if step == 0:
+                    prompt = questionary.text(
+                        "Research topic:",
+                        validate=lambda t: len(t.strip()) > 0 or "Enter a topic",
+                    ).ask()
+                    if prompt is None:
+                        step = -1
+                    else:
+                        step = 1
+                elif step == 1:
+                    model = _select_model(None)
+                    if model is None:
+                        step = 0
+                    else:
+                        step = 2
+                else:
+                    break
+            if step < 0:
                 continue
-
-            selected = _select_transforms(checked_default=True)
-            if selected is None:
+            _run_research(prompt.strip(), model, save_dir=None, no_view=False)
+            break
+        elif mode == "prompt":
+            step = 0
+            prompt = selected = model = generate_outputs = output_model = save_dir = None
+            while step >= 0:
+                if step == 0:
+                    prompt = questionary.text(
+                        "Enter your prompt:",
+                        validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+                    ).ask()
+                    if prompt is None:
+                        step = -1
+                    else:
+                        step = 1
+                elif step == 1:
+                    selected = _select_transforms(checked_default=True)
+                    if selected is None:
+                        step = 0
+                    elif not selected:
+                        console.print("[yellow]No transforms selected.[/yellow]\n")
+                    else:
+                        from .prompt_probe import list_transforms
+                        all_transforms = list_transforms(v=False)
+                        console.print(f"\n  [bold]{len(selected)}[/bold] of {len(all_transforms)} transforms selected\n")
+                        step = 2
+                elif step == 2:
+                    console.print("\n[bold]Select manipulation model[/bold] (for transforming prompts):")
+                    model = _select_model(None)
+                    if model is None:
+                        step = 1
+                    else:
+                        step = 3
+                elif step == 3:
+                    generate_outputs = questionary.confirm(
+                        "Generate outputs too?",
+                        default=False,
+                    ).ask()
+                    if generate_outputs is None:
+                        step = 2
+                    elif generate_outputs:
+                        step = 4
+                    else:
+                        output_model = None
+                        step = 5
+                elif step == 4:
+                    console.print("\n[bold]Select output model[/bold] (for generating responses):")
+                    output_model = _select_model(None)
+                    if output_model is None:
+                        step = 3
+                    else:
+                        step = 5
+                elif step == 5:
+                    default_dir = os.path.join("output", _prompt_to_slug(prompt))
+                    save_dir = questionary.text(
+                        "Output folder:",
+                        default=default_dir,
+                    ).ask()
+                    if save_dir is None:
+                        step = 4 if generate_outputs else 3
+                    else:
+                        step = 6
+                else:
+                    break
+            if step < 0:
                 continue
-            if not selected:
-                console.print("[yellow]No transforms selected.[/yellow]\n")
-                continue
-
-            from .prompt_probe import list_transforms
-            all_transforms = list_transforms(v=False)
-            console.print(f"\n  [bold]{len(selected)}[/bold] of {len(all_transforms)} transforms selected\n")
-
-            console.print("\n[bold]Select manipulation model[/bold] (for transforming prompts):")
-            model = _select_model(None)
-            if model is None:
-                continue
-
-            generate_outputs = questionary.confirm(
-                "Generate outputs too?",
-                default=False,
-            ).ask()
-            if generate_outputs is None:
-                continue
-
-            output_model = None
-            if generate_outputs:
-                console.print("\n[bold]Select output model[/bold] (for generating responses):")
-                output_model = _select_model(None)
-                if output_model is None:
-                    continue
-
-            default_dir = os.path.join("output", _prompt_to_slug(prompt))
-            save_dir = questionary.text(
-                "Output folder:",
-                default=default_dir,
-            ).ask()
-            if save_dir is None:
-                continue
-
             _run_prompt_manipulate(
                 prompt.strip(), model,
                 transforms=selected,
@@ -1116,45 +1149,65 @@ def _interactive_main():
                 save_dir=save_dir.strip(),
             )
         elif mode == "compare":
-            prompt = questionary.text(
-                "Enter your prompt:",
-                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
-            ).ask()
-            if prompt is None:
+            step = 0
+            prompt = models = run_eval = eval_model = save_dir = None
+            while step >= 0:
+                if step == 0:
+                    prompt = questionary.text(
+                        "Enter your prompt:",
+                        validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+                    ).ask()
+                    if prompt is None:
+                        step = -1
+                    else:
+                        step = 1
+                elif step == 1:
+                    models = _select_compare_models()
+                    if models is None:
+                        step = 0
+                    else:
+                        step = 2
+                elif step == 2:
+                    eval_opts = questionary.checkbox(
+                        "Options:",
+                        choices=[
+                            questionary.Choice(
+                                "Enable Pairwise Model Evaluation of Responses",
+                                value="evaluate",
+                                checked=False,
+                            ),
+                        ],
+                    ).ask()
+                    if eval_opts is None:
+                        step = 1
+                    else:
+                        run_eval = "evaluate" in eval_opts
+                        if run_eval:
+                            step = 3
+                        else:
+                            eval_model = None
+                            step = 4
+                elif step == 3:
+                    console.print("\n[dim]Select a model to judge the evaluation:[/dim]")
+                    eval_model = _select_model(None)
+                    if eval_model is None:
+                        step = 2
+                    else:
+                        step = 4
+                elif step == 4:
+                    default_dir = os.path.join("output", _prompt_to_slug(prompt))
+                    save_dir = questionary.text(
+                        "Output folder:",
+                        default=default_dir,
+                    ).ask()
+                    if save_dir is None:
+                        step = 3 if run_eval else 2
+                    else:
+                        step = 5
+                else:
+                    break
+            if step < 0:
                 continue
-            models = _select_compare_models()
-            if models is None:
-                continue
-
-            eval_opts = questionary.checkbox(
-                "Options:",
-                choices=[
-                    questionary.Choice(
-                        "Enable Pairwise Model Evaluation of Responses",
-                        value="evaluate",
-                        checked=False,
-                    ),
-                ],
-            ).ask()
-            if eval_opts is None:
-                continue
-            run_eval = "evaluate" in eval_opts
-
-            eval_model = None
-            if run_eval:
-                console.print("\n[dim]Select a model to judge the evaluation:[/dim]")
-                eval_model = _select_model(None)
-                if eval_model is None:
-                    continue
-
-            default_dir = os.path.join("output", _prompt_to_slug(prompt))
-            save_dir = questionary.text(
-                "Output folder:",
-                default=default_dir,
-            ).ask()
-            if save_dir is None:
-                continue
-
             _run_compare(prompt.strip(), models, evaluate=run_eval, eval_model=eval_model, save_dir=save_dir.strip())
             break
         elif mode == "grid":
@@ -1163,53 +1216,68 @@ def _interactive_main():
             console.print("  generates all responses, then uses [bold]pairwise evaluation[/bold]")
             console.print("  to rank and find the best combination.\n")
 
-            prompt = questionary.text(
-                "Enter your prompt:",
-                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
-            ).ask()
-            if prompt is None:
+            step = 0
+            prompt = models = selected_transforms = eval_model = save_dir = None
+            while step >= 0:
+                if step == 0:
+                    prompt = questionary.text(
+                        "Enter your prompt:",
+                        validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+                    ).ask()
+                    if prompt is None:
+                        step = -1
+                    else:
+                        step = 1
+                elif step == 1:
+                    models = _select_compare_models()
+                    if models is None:
+                        step = 0
+                    else:
+                        step = 2
+                elif step == 2:
+                    selected_transforms = _select_transforms(checked_default=False)
+                    if selected_transforms is None:
+                        step = 1
+                    elif not selected_transforms:
+                        console.print("[yellow]No transforms selected.[/yellow]\n")
+                    else:
+                        # Grid summary
+                        n_models = len(models)
+                        n_transforms = len(selected_transforms)
+                        n_cells = n_transforms * n_models + n_models
+                        if n_cells <= 5:
+                            n_pairs = n_cells * (n_cells - 1) // 2
+                        else:
+                            all_possible = n_cells * (n_cells - 1) // 2
+                            n_pairs = min(all_possible, n_cells * 5)
+                        n_eval_calls = n_pairs * 2
+
+                        console.print(f"\n[bold]Grid summary:[/bold]")
+                        console.print(f"  {n_transforms} transforms x {n_models} models = {n_transforms * n_models} cells (+{n_models} original)")
+                        console.print(f"  Total responses to generate: [bold]{n_cells}[/bold]")
+                        console.print(f"  Pairwise comparisons: [bold]{n_pairs}[/bold] ({n_eval_calls} LLM eval calls with position swap)\n")
+                        step = 3
+                elif step == 3:
+                    console.print("[dim]Select a model to judge the evaluation:[/dim]")
+                    eval_model = _select_model(None)
+                    if eval_model is None:
+                        step = 2
+                    else:
+                        step = 4
+                elif step == 4:
+                    default_dir = os.path.join("output", _prompt_to_slug(prompt))
+                    save_dir = questionary.text(
+                        "Output folder:",
+                        default=default_dir,
+                    ).ask()
+                    if save_dir is None:
+                        step = 3
+                    else:
+                        step = 5
+                else:
+                    break
+            if step < 0:
                 continue
-
-            models = _select_compare_models()
-            if models is None:
-                continue
-
-            selected_transforms = _select_transforms(checked_default=False)
-            if selected_transforms is None:
-                continue
-            if not selected_transforms:
-                console.print("[yellow]No transforms selected.[/yellow]\n")
-                continue
-
-            # Grid summary
-            n_models = len(models)
-            n_transforms = len(selected_transforms)
-            n_cells = n_transforms * n_models + n_models  # transform cells + original cells
-            if n_cells <= 5:
-                n_pairs = n_cells * (n_cells - 1) // 2
-            else:
-                all_possible = n_cells * (n_cells - 1) // 2
-                n_pairs = min(all_possible, n_cells * 5)
-            n_eval_calls = n_pairs * 2  # position swap
-
-            console.print(f"\n[bold]Grid summary:[/bold]")
-            console.print(f"  {n_transforms} transforms x {n_models} models = {n_transforms * n_models} cells (+{n_models} original)")
-            console.print(f"  Total responses to generate: [bold]{n_cells}[/bold]")
-            console.print(f"  Pairwise comparisons: [bold]{n_pairs}[/bold] ({n_eval_calls} LLM eval calls with position swap)\n")
-
-            console.print("[dim]Select a model to judge the evaluation:[/dim]")
-            eval_model = _select_model(None)
-            if eval_model is None:
-                continue
-
-            default_dir = os.path.join("output", _prompt_to_slug(prompt))
-            save_dir = questionary.text(
-                "Output folder:",
-                default=default_dir,
-            ).ask()
-            if save_dir is None:
-                continue
-
             _run_grid_search(
                 prompt.strip(), models, selected_transforms,
                 eval_model=eval_model, save_dir=save_dir.strip(),
@@ -1221,162 +1289,6 @@ def _interactive_main():
             providers = _get_providers()
             if providers:
                 console.print(f"  [dim]{len(providers)} provider(s): {', '.join(providers)}[/dim]\n")
-        elif mode == "tree":
-            prompt = questionary.text(
-                "Enter your prompt:",
-                validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
-            ).ask()
-            if prompt is None:
-                continue
-
-            console.print("\n[bold]Configure tree directions[/bold]\n")
-
-            # --- Sub ---
-            console.print("  [bold cyan]Sub (Decomposition)[/bold cyan]")
-            console.print("  [dim]Breaks your prompt into narrower, focused subprompts — goes DOWN into specifics.[/dim]\n")
-            sub_depth = questionary.text(
-                "  How many levels deep? (0 to skip):",
-                default="1",
-                validate=lambda t: t.strip().isdigit() or "Enter a number (0 to skip)",
-            ).ask()
-            if sub_depth is None:
-                continue
-            sub_n = None
-            sub_depth = int(sub_depth.strip())
-            if sub_depth > 0:
-                sub_n = []
-                for level in range(sub_depth):
-                    default = "5" if level == 0 else "3"
-                    count = questionary.text(
-                        f"  Prompts at level {level + 1}?",
-                        default=default,
-                        validate=lambda t: (t.strip().isdigit() and int(t.strip()) > 0) or "Enter a positive number",
-                    ).ask()
-                    if count is None:
-                        sub_n = None
-                        break
-                    sub_n.append(int(count.strip()))
-                if sub_n is not None and len(sub_n) != sub_depth:
-                    continue
-
-            # --- Super ---
-            console.print("\n  [bold red]Super (Abstraction)[/bold red]")
-            console.print("  [dim]Generates broader parent prompts that contain yours — goes UP in abstraction.[/dim]\n")
-            super_depth = questionary.text(
-                "  How many levels deep? (0 to skip):",
-                default="1",
-                validate=lambda t: t.strip().isdigit() or "Enter a number (0 to skip)",
-            ).ask()
-            if super_depth is None:
-                continue
-            super_n = None
-            super_depth = int(super_depth.strip())
-            if super_depth > 0:
-                super_n = []
-                for level in range(super_depth):
-                    default = "3"
-                    count = questionary.text(
-                        f"  Prompts at level {level + 1}?",
-                        default=default,
-                        validate=lambda t: (t.strip().isdigit() and int(t.strip()) > 0) or "Enter a positive number",
-                    ).ask()
-                    if count is None:
-                        super_n = None
-                        break
-                    super_n.append(int(count.strip()))
-                if super_n is not None and len(super_n) != super_depth:
-                    continue
-
-            # --- Side ---
-            console.print("\n  [bold green]Side (Lateral)[/bold green]")
-            console.print("  [dim]Creates alternative prompts at the same level — goes SIDEWAYS to explore parallels.[/dim]\n")
-            side_depth = questionary.text(
-                "  How many levels deep? (0 to skip):",
-                default="1",
-                validate=lambda t: t.strip().isdigit() or "Enter a number (0 to skip)",
-            ).ask()
-            if side_depth is None:
-                continue
-            side_n = None
-            side_depth = int(side_depth.strip())
-            if side_depth > 0:
-                side_n = []
-                for level in range(side_depth):
-                    default = "4"
-                    count = questionary.text(
-                        f"  Prompts at level {level + 1}?",
-                        default=default,
-                        validate=lambda t: (t.strip().isdigit() and int(t.strip()) > 0) or "Enter a positive number",
-                    ).ask()
-                    if count is None:
-                        side_n = None
-                        break
-                    side_n.append(int(count.strip()))
-                if side_n is not None and len(side_n) != side_depth:
-                    continue
-
-            # Validate at least one direction
-            if sub_n is None and super_n is None and side_n is None:
-                console.print("[yellow]At least one direction must have depth > 0.[/yellow]\n")
-                continue
-
-            # Show total count
-            console.print("")
-            total = 1
-            for label, n_list in [("Sub", sub_n), ("Super", super_n), ("Side", side_n)]:
-                if n_list:
-                    count, breakdown = _calculate_tree_count(n_list)
-                    if " + " in breakdown:
-                        console.print(f"  [dim]{label}: {breakdown} = {count}[/dim]")
-                    else:
-                        console.print(f"  [dim]{label}: {count}[/dim]")
-                    total += count
-            console.print(f"\n  [bold]{total} total prompts[/bold] will be generated\n")
-
-            # Tree-building model
-            console.print("[bold]Select tree-building model[/bold] (for generating prompts):")
-            model = _select_model(None)
-            if model is None:
-                continue
-
-            # Output option (pairwise evaluate pattern)
-            opts = questionary.checkbox(
-                "Options:",
-                choices=[
-                    questionary.Choice(
-                        "Generate LLM outputs for every prompt in the tree",
-                        value="outputs",
-                        checked=False,
-                    ),
-                ],
-            ).ask()
-            if opts is None:
-                continue
-            generate_outputs = "outputs" in opts
-
-            output_model = None
-            if generate_outputs:
-                console.print("\n[bold]Select output model[/bold] (for generating responses):")
-                output_model = _select_model(None)
-                if output_model is None:
-                    continue
-
-            # Output folder
-            default_dir = os.path.join("output", _prompt_to_slug(prompt))
-            save_dir = questionary.text(
-                "Output folder:",
-                default=default_dir,
-            ).ask()
-            if save_dir is None:
-                continue
-
-            _run_prompt_tree(
-                prompt.strip(), model,
-                sub_n=sub_n, super_n=super_n, side_n=side_n,
-                output_model=output_model,
-                save_dir=save_dir.strip(),
-            )
-            break
         else:
             console.print(f"\n[dim]{mode} — coming soon[/dim]\n")
 
@@ -1394,6 +1306,19 @@ def main():
     v.add_argument("--port", type=int, default=8383, help="Port (default: 8383)")
     v.add_argument("--no-open", action="store_true", help="Don't auto-open browser")
 
+    # research subcommand (direct shortcut)
+    r = sub.add_parser("research", help="Run a full research pipeline on a topic")
+    r.add_argument("prompt", help="Research topic or question")
+    r.add_argument("--model", "-m", default=None, help="Model to use (name, shorthand, or rank number). Interactive picker if omitted.")
+    r.add_argument("--no-view", action="store_true", help="Don't auto-open viewer when done")
+    r.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
+
+    # synthesize subcommand
+    s = sub.add_parser("synthesize", help="Run synthesis agent on research outputs")
+    s.add_argument("directory", nargs="?", default=".", help="Directory containing markdown files (default: current)")
+    s.add_argument("--model", "-m", default=None, help="Model to use (name, shorthand, or rank number). Uses rank 1 if omitted.")
+    s.add_argument("--view", action="store_true", help="Open viewer after synthesis")
+
     # compare subcommand
     c = sub.add_parser("compare", help="Compare a prompt across multiple models")
     c.add_argument("prompt", help="Prompt to compare across models")
@@ -1401,6 +1326,13 @@ def main():
     c.add_argument("--evaluate", "-e", action="store_true", help="Run pairwise evaluation after generating responses")
     c.add_argument("--eval-model", default=None, help="Model to use for pairwise evaluation (default: rank 1)")
     c.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
+
+    # agent subcommand (dev/testing — not in interactive menu)
+    a = sub.add_parser("agent", help="Run autonomous research agent on a topic")
+    a.add_argument("prompt", help="Research topic or question")
+    a.add_argument("--model", "-m", default=None, help="Model to use (name, shorthand, or rank number). Interactive picker if omitted.")
+    a.add_argument("--no-view", action="store_true", help="Don't auto-open viewer when done")
+    a.add_argument("--save", "-s", default=None, help="Output directory (auto-named from prompt if omitted)")
 
     # manipulate subcommand
     m = sub.add_parser("manipulate", help="Apply prompt transforms and optionally generate outputs")
@@ -1414,11 +1346,33 @@ def main():
 
     if args.command == "view":
         view(args.path, args.port, args.no_open)
+    elif args.command == "research":
+        # Ensure API keys before running research
+        _ensure_api_keys()
+        model = _select_model(args.model)
+        if model is None:
+            raise SystemExit(0)
+        _run_research(args.prompt, model, args.save, args.no_view)
     elif args.command == "compare":
         _ensure_api_keys()
         models = args.models or _select_default_compare_models(3)
         save_dir = args.save or os.path.join("output", _prompt_to_slug(args.prompt))
         _run_compare(args.prompt, models, args.evaluate, args.eval_model, save_dir)
+    elif args.command == "agent":
+        _ensure_api_keys()
+        model = _select_model(args.model)
+        if model is None:
+            raise SystemExit(0)
+        _run_agent(args.prompt, model, args.save, args.no_view)
+    elif args.command == "synthesize":
+        # Ensure API keys before running synthesis
+        _ensure_api_keys()
+        model = _select_model(args.model) if args.model else _select_model("1")
+        if model is None:
+            raise SystemExit(0)
+        _post_process_research(args.directory, model, verbose=True)
+        if args.view:
+            view(args.directory)
     elif args.command == "manipulate":
         # Handle --transforms list
         if args.transforms and args.transforms == ["list"]:
