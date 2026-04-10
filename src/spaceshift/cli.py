@@ -478,7 +478,7 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from rich.console import Console
     from .prompt_probe import prompt_transform, list_transforms
-    from .utils import _write_consolidated_md
+    from .utils import _write_consolidated_md, _write_md
 
     console = Console()
 
@@ -490,10 +490,15 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
         console.print("[yellow]No transforms selected.[/yellow]")
         return
 
+    # Resolve save path early so user sees it
+    if not save_dir:
+        save_dir = os.path.join("output", _prompt_to_slug(prompt))
+
     console.print(f"\n[bold]Running {len(transforms)} transforms...[/bold]")
     console.print(f"  [dim]Manipulation model: {model}[/dim]")
     if output_model:
         console.print(f"  [dim]Output model: {output_model}[/dim]")
+    console.print(f"  [dim]Output folder: {save_dir}/[/dim]")
 
     # Phase 1: Run transforms concurrently
     transformed_prompts = [None] * len(transforms)
@@ -531,27 +536,55 @@ def _run_prompt_manipulate(prompt, model, transforms=None, output_model=None,
         console.print("[red]All transforms failed.[/red]")
         return
 
-    # Phase 2: Generate outputs if requested
-    responses = None
+    # Save manipulated prompts immediately
+    prompts_path = os.path.join(save_dir, "manipulations.md")
+    saved = _write_consolidated_md(
+        prompts_path, prompt, transforms, transformed_prompts,
+        manipulation_model=model,
+    )
+    console.print(f"\n[bold green]{len(transforms)} transforms saved.[/bold green]")
+    console.print(f"  [dim]{saved}[/dim]")
+
+    # Phase 2: Generate outputs as separate files if requested
     if output_model:
         console.print(f"\n[bold]Generating {len(transforms)} outputs with {output_model}...[/bold]")
         from .LLM import LLM
-        llm = LLM(model=output_model, v=False)
-        responses = llm.result_batch(transformed_prompts, concurrency=concurrency)
 
-    # Resolve save path
-    if not save_dir:
-        save_dir = os.path.join("output", _prompt_to_slug(prompt))
+        def _generate_single(idx, name, transformed_prompt):
+            llm = LLM(model=output_model, v=False)
+            response = llm.user(transformed_prompt).result()
+            return idx, name, response
 
-    output_path = os.path.join(save_dir, "manipulations.md")
+        responses = [None] * len(transforms)
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = {
+                executor.submit(_generate_single, i, name, tp): i
+                for i, (name, tp) in enumerate(zip(transforms, transformed_prompts))
+            }
+            done_count = 0
+            for future in as_completed(futures):
+                try:
+                    idx, name, response = future.result()
+                    responses[idx] = response
+                    done_count += 1
+                    console.print(f"  [{done_count}/{len(transforms)}] [green]{name}[/green]")
 
-    saved = _write_consolidated_md(
-        output_path, prompt, transforms, transformed_prompts,
-        manipulation_model=model, output_model=output_model, responses=responses,
-    )
+                    # Save output file immediately
+                    out_path = os.path.join(save_dir, f"{name}.md")
+                    meta = {
+                        "transform": name,
+                        "prompt": transformed_prompts[idx],
+                        "original_prompt": prompt,
+                        "model": output_model,
+                    }
+                    _write_md(out_path, response, meta)
+                except Exception as e:
+                    done_count += 1
+                    console.print(f"  [{done_count}/{len(transforms)}] [red]{transforms[futures[future]]} — failed: {e}[/red]")
 
-    console.print(f"\n[bold green]Done! {len(transforms)} transforms applied.[/bold green]")
-    console.print(f"[dim]Saved to: {saved}[/dim]")
+        output_count = sum(1 for r in responses if r is not None)
+        console.print(f"\n[bold green]{output_count} outputs saved.[/bold green]")
+        console.print(f"  [dim]{save_dir}/[/dim]")
 
 
 def _interactive_main():
