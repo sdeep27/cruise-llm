@@ -9,6 +9,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-04-17
+
+### Added
+- **AutoPrompt mode**: a new interactive CLI mode where a prompting model autonomously improves a prompt via tool-driven edits. Uses three LLMs (prompter, output, judge) and pairwise evaluation per turn.
+  - Five mutation tools: `edit_user_prompt`, `edit_system_prompt`, `add_followup`, `edit_followup`, `remove_followup`. Prompter is forced to use exactly one tool per turn and gives a short rationale.
+  - Metrics resolved once upfront (via `_generate_metrics` on the prompt alone) and reused every turn — fixes a moving-yardstick bug where `pairwise_evaluate(metrics=None)` re-rolled the metric set per call.
+  - `expose_metrics` flag (default `True`) lets the prompter see the evaluation axes and target them; set to `False` for a blind-exploration run.
+  - Swap-averaged pairwise eval (`position_swap=True`) decides each round. Winning challenger becomes the new baseline; losers revert.
+  - Per-turn markdown saves plus a run-summary file with YAML frontmatter. Final panel pretty-prints the original baseline alongside the winning prompt chain.
+  - Live CLI shows tool name, rationale, short output preview, score delta, and win/loss each turn.
+- README front-matter and docs site (spcshft.com) updated with AutoPrompt walkthrough and screenshots.
+
 ## [2.0.0] - 2026-04-15
 
 Major pivot: spaceshift is now an **interactive CLI prompt exploration toolkit**. The deep-research CLI surface is gone; the library has been rebuilt around five guided modes that branch, navigate, and evaluate prompts.

@@ -21,16 +21,19 @@ import { Card, CardGrid, Code } from "@astrojs/starlight/components";
 
 <img src="/screenshots/home.png" alt="spaceshift main menu" style="border-radius: 8px; margin-top: 1.5rem;" />
 
-## Five modes
+## Six modes
 
 <CardGrid>
+  <Card title="AutoPrompt" icon="rocket">
+    A prompting model autonomously improves your prompt via tool-driven edits — user prompt, system prompt, and followups — with pairwise eval picking winners each turn. **New.**
+  </Card>
   <Card title="Prompt Manipulate" icon="random">
     Transform a prompt through 22 built-in operations — abstraction up/down, inversion, reflection, rotation, dimension shifts, translations — then optionally generate responses for each variant.
   </Card>
   <Card title="Prompt Tree" icon="list-format">
     Explore a prompt in three directions: **sub** (decomposition), **super** (abstraction), **side** (lateral). Configure depth per direction and render the full tree.
   </Card>
-  <Card title="Prompt Chain" icon="rocket">
+  <Card title="Prompt Chain" icon="document">
     Build a multi-turn conversation by adding followups one at a time. Each turn runs with full prior context.
   </Card>
   <Card title="Compare Models" icon="approve-check-circle">
@@ -42,6 +45,18 @@ import { Card, CardGrid, Code } from "@astrojs/starlight/components";
 </CardGrid>
 
 ---
+
+## AutoPrompt
+
+Three LLMs, one optimization loop. A **prompting model** proposes edits via tools (`edit_user_prompt`, `edit_system_prompt`, `add_followup`, `edit_followup`, `remove_followup`), an **output model** runs each candidate, and a **judge model** runs swap-averaged pairwise eval to pick the winner. Only the winning candidate becomes the new baseline for the next turn.
+
+<img src="/screenshots/autoprompt-progress.png" alt="AutoPrompt turn-by-turn progress with win/loss feedback" style="border-radius: 8px;" />
+
+Metrics are resolved **once upfront** (not re-rolled every turn) so the prompter is scored on a stable yardstick across all turns. You can optionally expose those metrics to the prompter so it can target them directly, or keep it blind and let it explore.
+
+<img src="/screenshots/autoprompt-final.png" alt="AutoPrompt final candidate with turn-by-turn edits" style="border-radius: 8px;" />
+
+The final winning prompt chain (system + user + followups) prints to the terminal alongside the original baseline. Every turn plus a run summary save as markdown with YAML frontmatter.
 
 ## Prompt Manipulate
 

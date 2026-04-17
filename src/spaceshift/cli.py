@@ -1212,6 +1212,142 @@ def _run_grid_search(prompt, models, transforms, eval_model, save_dir):
     _print_view_hint(console, filepath)
 
 
+def _run_autoprompt(prompt, prompt_model, output_model, eval_model, max_turns,
+                    enable_search, metrics, expose_metrics, save_dir):
+    """Execute the AutoPrompt optimization loop with live CLI updates."""
+    from rich.console import Console
+    from .autoprompt import run_autoprompt
+    from .compare_models import validate_model
+
+    console = Console()
+
+    prompt_model = validate_model(prompt_model)
+    output_model = validate_model(output_model)
+    eval_model = validate_model(eval_model)
+
+    console.print(f"\n[bold]AutoPrompt[/bold]")
+    console.print(f"  prompting model: [cyan]{prompt_model}[/cyan]")
+    console.print(f"  output model:    [cyan]{output_model}[/cyan]  [dim]{'(search on)' if enable_search else ''}[/dim]")
+    console.print(f"  eval model:      [cyan]{eval_model}[/cyan]")
+    console.print(f"  max turns:       [bold]{max_turns}[/bold]")
+    if metrics:
+        console.print(f"  metrics:         {len(metrics)} custom")
+    else:
+        console.print(f"  metrics:         auto-generated")
+    console.print(f"  expose metrics:  [bold]{'yes' if expose_metrics else 'no'}[/bold]")
+    console.print()
+
+    def _on_event(ev):
+        t = ev.get("type")
+        if t == "metrics_resolved":
+            ms = ev.get("metrics") or []
+            origin = "auto-generated" if ev.get("auto_generated") else "custom"
+            console.print(f"[bold]Evaluation metrics[/bold] [dim]({origin}, resolved once):[/dim]")
+            for i, m in enumerate(ms):
+                console.print(f"  {i+1}. {m}")
+            console.print(f"  [dim]exposed to prompter: {'yes' if ev.get('exposed') else 'no'}[/dim]\n")
+        elif t == "baseline_start":
+            console.print("[bold]Baseline[/bold]  generating initial output...")
+        elif t == "baseline_done":
+            preview = (ev["output"] or "")[:140].replace("\n", " ")
+            console.print(f"  [dim]{preview}{'…' if len(ev['output'] or '') > 140 else ''}[/dim]\n")
+        elif t == "turn_start":
+            console.print(f"[bold]Turn {ev['turn']}/{ev['max_turns']}[/bold]")
+        elif t == "edit_proposed":
+            edit = ev.get("edit") or {}
+            op = edit.get("op", "(none)")
+            rationale = edit.get("rationale", "")
+            pos_str = f" pos={edit['position']}" if "position" in edit else ""
+            console.print(f"  tool: [yellow]{op}[/yellow]{pos_str}")
+            if rationale:
+                console.print(f"  rationale: [dim]{rationale}[/dim]")
+        elif t == "invalid_edit":
+            console.print("  [red]invalid edit — skipping[/red]\n")
+        elif t == "challenger_start":
+            console.print("  running challenger...")
+        elif t == "challenger_done":
+            preview = (ev["output"] or "")[:140].replace("\n", " ")
+            console.print(f"  [dim]{preview}{'…' if len(ev['output'] or '') > 140 else ''}[/dim]")
+        elif t == "challenger_error":
+            console.print(f"  [red]challenger failed: {ev['error']}[/red]\n")
+        elif t == "eval_start":
+            console.print("  pairwise eval (swap-averaged)...")
+        elif t == "eval_done":
+            scores = ev["scores"]
+            cur = scores.get(0, 0.0)
+            cha = scores.get(1, 0.0)
+            if ev["status"] == "win":
+                console.print(f"  current {cur:.2f} vs challenger [bold green]{cha:.2f}[/bold green]")
+                console.print(f"  [bold green]challenger WINS[/bold green] — new baseline\n")
+            else:
+                console.print(f"  current [bold green]{cur:.2f}[/bold green] vs challenger {cha:.2f}")
+                console.print(f"  [dim]challenger loses — reverting[/dim]\n")
+        elif t == "eval_error":
+            console.print(f"  [red]eval failed: {ev['error']}[/red]\n")
+        elif t == "prompter_error":
+            console.print(f"  [red]prompter failed: {ev['error']}[/red]\n")
+
+    result = run_autoprompt(
+        prompt=prompt,
+        prompt_model=prompt_model,
+        output_model=output_model,
+        eval_model=eval_model,
+        max_turns=max_turns,
+        metrics=metrics,
+        expose_metrics=expose_metrics,
+        enable_search=enable_search,
+        save_dir=save_dir,
+        on_event=_on_event,
+        v=False,
+    )
+
+    from rich.panel import Panel
+
+    def _render_candidate(c: dict) -> str:
+        parts = []
+        sys_txt = c.get("system") or ""
+        parts.append(f"[bold cyan]system[/bold cyan]\n{sys_txt if sys_txt else '[dim](empty)[/dim]'}")
+        parts.append(f"\n[bold cyan]user[/bold cyan]\n{c.get('user_prompt', '')}")
+        fups = c.get("followups") or []
+        if fups:
+            body = "\n".join(f"[dim]{i}.[/dim] {f}" for i, f in enumerate(fups))
+            parts.append(f"\n[bold cyan]followups[/bold cyan] [dim]({len(fups)})[/dim]\n{body}")
+        else:
+            parts.append(f"\n[bold cyan]followups[/bold cyan]\n[dim](none)[/dim]")
+        return "\n".join(parts)
+
+    baseline = result["history"][0]["candidate"] if result.get("history") else None
+    fc = result["final_candidate"]
+    wins = sum(1 for h in result["history"] if h.get("status") == "win")
+
+    console.print()
+    if baseline is not None:
+        console.print(Panel(
+            _render_candidate(baseline),
+            title="[bold]Original prompt chain[/bold]",
+            border_style="dim",
+            padding=(1, 2),
+        ))
+    winner_title = (
+        f"[bold green]Winning prompt chain[/bold green] [dim]({wins} winning edit(s) over {max_turns} turn(s))[/dim]"
+        if wins > 0 else
+        f"[bold]Winning prompt chain[/bold] [dim](unchanged — no edit beat the baseline)[/dim]"
+    )
+    console.print(Panel(
+        _render_candidate(fc),
+        title=winner_title,
+        border_style="green" if wins > 0 else "white",
+        padding=(1, 2),
+    ))
+
+    if result.get("saved"):
+        summary_path = result["saved"][-1]
+        console.print(f"\n[bold green]Saved to: {summary_path}[/bold green]")
+        _print_view_hint(console, summary_path)
+
+    console.print()
+
+
 def _interactive_main():
     """Interactive mode — shown when user runs `spaceshift` with no args."""
     import questionary
@@ -1235,6 +1371,7 @@ def _interactive_main():
                 Choice("Grid Search and Evaluation", value="grid"),
                 Choice("Prompt Tree", value="tree"),
                 Choice("Prompt Chain", value="chain"),
+                Choice("AutoPrompt", value="autoprompt"),
                 Separator(),
                 Choice("Manage API Keys", value="keys"),
             ],
@@ -1638,6 +1775,113 @@ def _interactive_main():
                 continue
 
             _run_prompt_chain(prompts, model, save_dir=save_dir.strip())
+            break
+        elif mode == "autoprompt":
+            console.print("\n[bold]AutoPrompt[/bold]\n")
+            console.print("  A prompting model autonomously edits your prompt (user prompt,")
+            console.print("  system prompt, and followups) via tools. After each edit, pairwise")
+            console.print("  eval picks the winner. The raw outputs stay hidden — only win/loss")
+            console.print("  feedback goes back. You choose whether to also show the evaluation")
+            console.print("  metrics to the prompter (default yes) so it can target them.\n")
+
+            step = 0
+            ap_prompt = ap_prompt_model = ap_output_model = ap_eval_model = None
+            ap_max_turns = ap_enable_search = ap_metrics = ap_save_dir = None
+            ap_expose_metrics = None
+            while step >= 0:
+                if step == 0:
+                    ap_prompt = questionary.text(
+                        "Enter your prompt:",
+                        validate=lambda t: len(t.strip()) > 0 or "Enter a prompt",
+                    ).ask()
+                    if ap_prompt is None:
+                        step = -1
+                    else:
+                        step = 1
+                elif step == 1:
+                    ap_prompt_model = _select_model(
+                        None,
+                        prompt_text="Select PROMPTING model (proposes edits to improve the prompt):",
+                    )
+                    if ap_prompt_model is None:
+                        step = 0
+                    else:
+                        step = 2
+                elif step == 2:
+                    ap_output_model = _select_model(
+                        None,
+                        prompt_text="Select OUTPUT model (generates responses to evaluate):",
+                    )
+                    if ap_output_model is None:
+                        step = 1
+                    else:
+                        step = 3
+                elif step == 3:
+                    ap_eval_model = _select_model(
+                        None,
+                        prompt_text="Select EVALUATION model (judges pairwise which output wins):",
+                    )
+                    if ap_eval_model is None:
+                        step = 2
+                    else:
+                        step = 4
+                elif step == 4:
+                    mt_raw = questionary.text(
+                        "Max turns:",
+                        default="6",
+                        validate=lambda t: (t.strip().isdigit() and int(t.strip()) >= 1) or "Enter a positive integer",
+                    ).ask()
+                    if mt_raw is None:
+                        step = 3
+                    else:
+                        ap_max_turns = int(mt_raw.strip())
+                        step = 5
+                elif step == 5:
+                    ap_enable_search = questionary.confirm(
+                        "Enable web search on output model?",
+                        default=False,
+                    ).ask()
+                    if ap_enable_search is None:
+                        step = 4
+                    else:
+                        step = 6
+                elif step == 6:
+                    ap_metrics = _collect_eval_metrics()
+                    step = 7
+                elif step == 7:
+                    ap_expose_metrics = questionary.confirm(
+                        "Show the evaluation metrics to the prompting model so it can target them?",
+                        default=True,
+                    ).ask()
+                    if ap_expose_metrics is None:
+                        step = 6
+                    else:
+                        step = 8
+                elif step == 8:
+                    default_dir = os.path.join("output", _prompt_to_slug(ap_prompt))
+                    ap_save_dir = questionary.text(
+                        "Output folder:",
+                        default=default_dir,
+                    ).ask()
+                    if ap_save_dir is None:
+                        step = 7
+                    else:
+                        step = 9
+                else:
+                    break
+            if step < 0:
+                continue
+            _run_autoprompt(
+                ap_prompt.strip(),
+                ap_prompt_model,
+                ap_output_model,
+                ap_eval_model,
+                ap_max_turns,
+                ap_enable_search,
+                ap_metrics,
+                ap_expose_metrics,
+                ap_save_dir.strip(),
+            )
             break
         else:
             console.print(f"\n[dim]{mode} — coming soon[/dim]\n")

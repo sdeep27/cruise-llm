@@ -15,6 +15,20 @@ Pick a mode, pick a model from categorized rankings, enter your prompt. Results 
 
 ---
 
+## AutoPrompt — autonomous prompt optimization
+
+AutoPrompt uses three LLMs to iteratively improve your prompt without you touching it. A **prompting model** proposes edits via tools, an **output model** runs each candidate, and a **judge model** runs pairwise evaluation to pick the winner. The prompter doesn't just rewrite your question — it can edit the upstream system prompt and add/remove/replace preset followups, exploring the full multi-turn scaffold.
+
+![AutoPrompt turn-by-turn progress with win/loss feedback](docs/public/screenshots/autoprompt-progress.png)
+
+Each turn the prompter chooses one of five tools (`edit_user_prompt`, `edit_system_prompt`, `add_followup`, `edit_followup`, `remove_followup`), gives a short rationale, and gets terse win/loss feedback from a swap-averaged pairwise eval against the current baseline. Metrics are resolved **once upfront** (not re-rolled every turn) so the prompter is scored on a stable yardstick, and you can optionally expose those metrics to the prompter so it can target them directly.
+
+![AutoPrompt final candidate and summary](docs/public/screenshots/autoprompt-final.png)
+
+The final candidate (system + user + followups) prints to the terminal alongside the original baseline, and every turn plus a run summary are saved as markdown with YAML frontmatter for replay in the viewer.
+
+---
+
 ### Install
 
 ```bash
@@ -74,6 +88,10 @@ Run the same prompt across multiple models and rank the responses. Optionally ad
 #### Grid Search and Evaluation
 
 Sweep across models × transforms simultaneously and rank every combination to find what works best.
+
+#### AutoPrompt
+
+Let a prompting model autonomously improve your prompt via tool-driven edits (user prompt, system prompt, followups) with pairwise eval deciding each round. See the top of this README for a walkthrough.
 
 ---
 
